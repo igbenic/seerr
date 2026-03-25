@@ -14,14 +14,8 @@ const hformat = winston.format.printf(
   }
 );
 
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL?.toLowerCase() || 'debug',
-  format: winston.format.combine(
-    winston.format.splat(),
-    winston.format.timestamp(),
-    hformat
-  ),
-  transports: [
+const buildTransports = (): winston.transport[] => {
+  const transports: winston.transport[] = [
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
@@ -30,6 +24,13 @@ const logger = winston.createLogger({
         hformat
       ),
     }),
+  ];
+
+  if (process.env.NODE_ENV === 'test') {
+    return transports;
+  }
+
+  transports.push(
     new winston.transports.DailyRotateFile({
       filename: process.env.CONFIG_DIRECTORY
         ? `${process.env.CONFIG_DIRECTORY}/logs/seerr-%DATE%.log`
@@ -56,8 +57,20 @@ const logger = winston.createLogger({
         winston.format.timestamp(),
         winston.format.json()
       ),
-    }),
-  ],
+    })
+  );
+
+  return transports;
+};
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL?.toLowerCase() || 'debug',
+  format: winston.format.combine(
+    winston.format.splat(),
+    winston.format.timestamp(),
+    hformat
+  ),
+  transports: buildTransports(),
 });
 
 export default logger;

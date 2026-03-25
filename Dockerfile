@@ -39,7 +39,13 @@ ARG COMMIT_TAG=local
 ENV NODE_ENV=production
 ENV COMMIT_TAG=${COMMIT_TAG}
 
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache \
+  chromium \
+  freetype \
+  harfbuzz \
+  nss \
+  tzdata \
+  ttf-freefont
 
 USER node:node
 

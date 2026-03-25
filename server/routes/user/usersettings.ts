@@ -1,3 +1,4 @@
+import { ImdbAuthenticationError } from '@server/api/imdb';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
@@ -7,9 +8,19 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import type {
+  ImdbImportConfirmResponse,
+  ImdbImportPreviewResponse,
+} from '@server/interfaces/api/imdbImportInterfaces';
+import type {
   UserSettingsGeneralResponse,
   UserSettingsNotificationsResponse,
 } from '@server/interfaces/api/userSettingsInterfaces';
+import {
+  clearImdbConnection,
+  confirmImdbImport,
+  createImdbImportPreview,
+  linkImdbConnection,
+} from '@server/lib/imdb';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -518,6 +529,147 @@ userSettingsRoutes.delete<{ id: string }>(
       return res.status(204).send();
     } catch (e) {
       return res.status(500).json({ message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/imdb',
+  isOwnProfile(),
+  async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ code: ApiErrorCode.Unauthorized });
+    }
+
+    const authType = req.body.authType;
+
+    if (authType !== 'password' && authType !== 'cookie') {
+      return res.status(400).json({
+        message: 'IMDb authType must be either password or cookie.',
+      });
+    }
+
+    try {
+      if (authType === 'password') {
+        if (!req.body.email || !req.body.password) {
+          return res.status(400).json({
+            message: 'IMDb email and password are required.',
+          });
+        }
+
+        await linkImdbConnection(req.user.id, {
+          authType,
+          email: req.body.email,
+          password: req.body.password,
+        });
+      } else {
+        if (!req.body.cookieAtMain) {
+          return res.status(400).json({
+            message: 'IMDb at-main cookie is required.',
+          });
+        }
+
+        await linkImdbConnection(req.user.id, {
+          authType,
+          cookieAtMain: req.body.cookieAtMain,
+          email: req.body.email,
+        });
+      }
+
+      return res.status(204).send();
+    } catch (error) {
+      if (error instanceof ImdbAuthenticationError) {
+        return res.status(401).json({ message: error.message });
+      }
+
+      logger.error('Failed to link IMDb account to user.', {
+        error,
+        label: 'IMDb',
+        userId: req.user.id,
+      });
+
+      return res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to link IMDb account.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.delete<{ id: string }>(
+  '/linked-accounts/imdb',
+  isOwnProfile(),
+  async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ code: ApiErrorCode.Unauthorized });
+    }
+
+    try {
+      await clearImdbConnection(req.user.id);
+
+      return res.status(204).send();
+    } catch (error) {
+      return res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to unlink IMDb account.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/imdb/import/preview',
+  isOwnProfile(),
+  async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ code: ApiErrorCode.Unauthorized });
+    }
+
+    try {
+      const preview: ImdbImportPreviewResponse = await createImdbImportPreview(
+        req.user.id
+      );
+
+      return res.status(200).json(preview);
+    } catch (error) {
+      return res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to preview IMDb import.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }, unknown, { previewToken?: string }>(
+  '/linked-accounts/imdb/import/confirm',
+  isOwnProfile(),
+  async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ code: ApiErrorCode.Unauthorized });
+    }
+
+    if (!req.body.previewToken) {
+      return res.status(400).json({ message: 'A preview token is required.' });
+    }
+
+    try {
+      const result: ImdbImportConfirmResponse = await confirmImdbImport(
+        req.user.id,
+        req.body.previewToken
+      );
+
+      return res.status(200).json(result);
+    } catch (error) {
+      return res.status(500).json({
+        message:
+          error instanceof Error ? error.message : 'Unable to run IMDb import.',
+      });
     }
   }
 );

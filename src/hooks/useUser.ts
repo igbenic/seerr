@@ -12,6 +12,10 @@ export type { PermissionCheckOptions };
 export interface User {
   id: number;
   warnings: string[];
+  imdbAuthType?: 'password' | 'cookie' | null;
+  imdbConnectedAt?: Date | null;
+  imdbEmail?: string | null;
+  imdbLastImportAt?: Date | null;
   plexUsername?: string | null;
   jellyfinUsername?: string | null;
   traktUsername?: string | null;

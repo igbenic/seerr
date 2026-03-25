@@ -13,6 +13,29 @@ export interface TraktTokenResponse {
   created_at: number;
 }
 
+interface TraktSyncWatchlistPayload {
+  movies?: { ids: Pick<TraktIds, 'imdb'> }[];
+  shows?: { ids: Pick<TraktIds, 'imdb'> }[];
+}
+
+interface TraktSyncWatchlistResultGroup {
+  episodes?: number;
+  movies?: number;
+  people?: number;
+  shows?: number;
+}
+
+interface TraktSyncWatchlistNotFound {
+  movies?: { ids: Pick<TraktIds, 'imdb'> }[];
+  shows?: { ids: Pick<TraktIds, 'imdb'> }[];
+}
+
+interface TraktSyncWatchlistResponseBody {
+  added?: TraktSyncWatchlistResultGroup;
+  existing?: TraktSyncWatchlistResultGroup;
+  not_found?: TraktSyncWatchlistNotFound;
+}
+
 interface TraktUserSettingsResponse {
   user: {
     username: string;
@@ -110,6 +133,22 @@ export interface TraktRatedShow {
   rating: number;
   type: 'show';
   show: TraktShow | null;
+}
+
+export interface TraktWatchlistSyncItem {
+  ids: Pick<TraktIds, 'imdb'>;
+  type: 'movie' | 'show';
+}
+
+export interface TraktWatchlistSyncNotFoundItem {
+  ids: Pick<TraktIds, 'imdb'>;
+  type: 'movie' | 'show';
+}
+
+export interface TraktWatchlistSyncResponse {
+  added: number;
+  existing: number;
+  notFound: TraktWatchlistSyncNotFoundItem[];
 }
 
 export class TraktAuthenticationError extends Error {
@@ -277,6 +316,40 @@ class TraktAPI {
     );
   }
 
+  public async addToWatchlist(
+    items: TraktWatchlistSyncItem[]
+  ): Promise<TraktWatchlistSyncResponse> {
+    const payload: TraktSyncWatchlistPayload = {
+      movies: items
+        .filter((item) => item.type === 'movie')
+        .map((item) => ({ ids: item.ids })),
+      shows: items
+        .filter((item) => item.type === 'show')
+        .map((item) => ({ ids: item.ids })),
+    };
+
+    const response = await this.authenticatedPost<
+      TraktSyncWatchlistResponseBody,
+      TraktSyncWatchlistPayload
+    >('/sync/watchlist', payload);
+
+    return {
+      added: (response.added?.movies ?? 0) + (response.added?.shows ?? 0),
+      existing:
+        (response.existing?.movies ?? 0) + (response.existing?.shows ?? 0),
+      notFound: [
+        ...(response.not_found?.movies ?? []).map((item) => ({
+          ids: item.ids,
+          type: 'movie' as const,
+        })),
+        ...(response.not_found?.shows ?? []).map((item) => ({
+          ids: item.ids,
+          type: 'show' as const,
+        })),
+      ],
+    };
+  }
+
   public async getMovieHistory(limit = 50): Promise<TraktMovieHistoryItem[]> {
     return this.authenticatedGet<TraktMovieHistoryItem[]>(
       '/users/me/history/movies',
@@ -403,6 +476,42 @@ class TraktAPI {
           const cacheKey = this.cacheKey(endpoint, config);
           cache.set(cacheKey, response.data, ttl);
         }
+
+        return response.data;
+      }
+
+      throw error;
+    }
+  }
+
+  private async authenticatedPost<TResponse, TBody>(
+    endpoint: string,
+    body: TBody,
+    config?: AxiosRequestConfig
+  ): Promise<TResponse> {
+    await this.ensureAccessToken();
+
+    try {
+      const response = await this.axios.post<TResponse>(endpoint, body, {
+        ...config,
+        headers: {
+          ...config?.headers,
+          ...this.authHeaders(),
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        await this.refreshAccessToken(true);
+
+        const response = await this.axios.post<TResponse>(endpoint, body, {
+          ...config,
+          headers: {
+            ...config?.headers,
+            ...this.authHeaders(),
+          },
+        });
 
         return response.data;
       }

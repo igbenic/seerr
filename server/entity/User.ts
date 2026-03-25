@@ -41,6 +41,8 @@ export class User {
 
   static readonly filteredFields: string[] = [
     'email',
+    'imdbCookieAtMain',
+    'imdbPassword',
     'plexId',
     'password',
     'resetPasswordGuid',
@@ -117,6 +119,24 @@ export class User {
 
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public traktConnectedAt?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  public imdbEmail?: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  public imdbAuthType?: 'password' | 'cookie' | null;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public imdbPassword?: string | null;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public imdbCookieAtMain?: string | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public imdbConnectedAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public imdbLastImportAt?: Date | null;
 
   @Column({ type: 'integer', default: 0 })
   public permissions = 0;
