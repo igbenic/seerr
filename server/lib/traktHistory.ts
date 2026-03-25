@@ -17,6 +17,7 @@ import { createTraktApiForUser } from '@server/lib/trakt';
 import logger from '@server/logger';
 
 const TRAKT_HISTORY_PAGE_SIZE = 100;
+const TRAKT_HISTORY_UPSERT_CHUNK_SIZE = 100;
 const runningUserSyncs = new Set<number>();
 
 type SyncOptions = {
@@ -235,7 +236,12 @@ export const syncTraktHistoryForUser = async (
     const entries = [...movieEntries, ...showEntries];
 
     if (entries.length > 0) {
-      await getRepository(TraktHistory).upsert(entries, ['userId', 'historyId']);
+      for (let index = 0; index < entries.length; index += TRAKT_HISTORY_UPSERT_CHUNK_SIZE) {
+        await getRepository(TraktHistory).upsert(
+          entries.slice(index, index + TRAKT_HISTORY_UPSERT_CHUNK_SIZE),
+          ['userId', 'historyId']
+        );
+      }
     }
 
     const latestImported = await getRepository(TraktHistory).findOne({

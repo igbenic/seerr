@@ -12,7 +12,8 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
-import { getTraktRecommendations, getTraktWatchlist } from '@server/lib/trakt';
+import { getTraktRecommendations } from '@server/lib/trakt';
+import { getTraktWatchlist } from '@server/lib/traktWatchlist';
 import logger from '@server/logger';
 import { mapProductionCompany } from '@server/models/Movie';
 import {

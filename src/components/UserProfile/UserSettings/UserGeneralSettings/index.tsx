@@ -19,6 +19,7 @@ import {
 import { ApiErrorCode } from '@server/constants/error';
 import type {
   TraktHistoryStatusResponse,
+  TraktWatchlistStatusResponse,
 } from '@server/interfaces/api/userInterfaces';
 import type { UserSettingsGeneralResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';
@@ -93,6 +94,17 @@ const messages = defineMessages(
     traktHistoryStatusLatest: 'Latest imported watch',
     traktHistorySyncSuccess: 'Trakt history sync completed.',
     traktHistorySyncFailure: 'Unable to sync Trakt history.',
+    traktWatchlistSync: 'Sync Trakt Watchlist',
+    traktWatchlistSyncTip:
+      'Mirror your Trakt watchlist into Seerr and keep it updated locally for faster access.',
+    traktWatchlistSyncNow: 'Sync Now',
+    traktWatchlistImported: '{count} watchlist items',
+    traktWatchlistStatusConnected: 'Linked Trakt account required for sync.',
+    traktWatchlistStatusLastSuccess: 'Last successful sync',
+    traktWatchlistStatusLastAttempt: 'Last attempted sync',
+    traktWatchlistStatusLastError: 'Last error',
+    traktWatchlistSyncSuccess: 'Trakt watchlist sync completed.',
+    traktWatchlistSyncFailure: 'Unable to sync Trakt watchlist.',
   }
 );
 
@@ -125,12 +137,22 @@ const UserGeneralSettings = () => {
   } = useSWR<TraktHistoryStatusResponse>(
     user ? `/api/v1/user/${user?.id}/settings/trakt-history` : null
   );
+  const {
+    data: traktWatchlistStatus,
+    mutate: revalidateTraktWatchlistStatus,
+  } = useSWR<TraktWatchlistStatusResponse>(
+    user ? `/api/v1/user/${user?.id}/settings/trakt-watchlist` : null
+  );
+  const hasMediaServerEmailFallback = !!user?.jellyfinUsername || !!user?.plexUsername;
+  const requiresExplicitEmail =
+    user?.id === 1
+      ? !hasMediaServerEmailFallback
+      : user?.userType !== UserType.JELLYFIN &&
+        user?.userType !== UserType.EMBY;
 
   const UserGeneralSettingsSchema = Yup.object().shape({
     email:
-      // email is required for everybody except non-admin jellyfin users
-      user?.id === 1 ||
-      (user?.userType !== UserType.JELLYFIN && user?.userType !== UserType.EMBY)
+      requiresExplicitEmail
         ? Yup.string()
             .test(
               'email',
@@ -201,6 +223,7 @@ const UserGeneralSettings = () => {
           watchlistSyncTv: data?.watchlistSyncTv,
           hideWatched: data?.hideWatched,
           traktHistorySyncEnabled: data?.traktHistorySyncEnabled,
+          traktWatchlistSyncEnabled: data?.traktWatchlistSyncEnabled,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -225,6 +248,7 @@ const UserGeneralSettings = () => {
               watchlistSyncTv: values.watchlistSyncTv,
               hideWatched: values.hideWatched,
               traktHistorySyncEnabled: values.traktHistorySyncEnabled,
+              traktWatchlistSyncEnabled: values.traktWatchlistSyncEnabled,
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -680,14 +704,161 @@ const UserGeneralSettings = () => {
                       </span>
                     </label>
                     <div className="form-input-area">
-                      <Field
+                      <input
                         type="checkbox"
                         id="hideWatched"
                         name="hideWatched"
+                        checked={!!values.hideWatched}
                         onChange={() => {
                           setFieldValue('hideWatched', !values.hideWatched);
                         }}
                       />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <label
+                      htmlFor="traktWatchlistSyncEnabled"
+                      className="checkbox-label"
+                    >
+                      <span>
+                        {intl.formatMessage(messages.traktWatchlistSync)}
+                      </span>
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.traktWatchlistSyncTip)}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
+                      <input
+                        type="checkbox"
+                        id="traktWatchlistSyncEnabled"
+                        name="traktWatchlistSyncEnabled"
+                        checked={!!values.traktWatchlistSyncEnabled}
+                        onChange={() => {
+                          setFieldValue(
+                            'traktWatchlistSyncEnabled',
+                            !values.traktWatchlistSyncEnabled
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="text-label" />
+                    <div className="form-input-area">
+                      <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
+                        <div className="text-sm text-gray-200">
+                          {intl.formatMessage(
+                            messages.traktWatchlistImported,
+                            {
+                              count: traktWatchlistStatus?.totalItems ?? 0,
+                            }
+                          )}
+                        </div>
+                        <div className="mt-2 text-sm text-gray-400">
+                          {traktWatchlistStatus?.traktConnected
+                            ? intl.formatMessage(
+                                messages.traktWatchlistStatusLastSuccess
+                              ) +
+                              ': ' +
+                              (traktWatchlistStatus?.lastSuccessfulSyncAt
+                                ? `${intl.formatDate(
+                                    traktWatchlistStatus.lastSuccessfulSyncAt,
+                                    {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    }
+                                  )} ${intl.formatTime(
+                                    traktWatchlistStatus.lastSuccessfulSyncAt,
+                                    {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    }
+                                  )}`
+                                : '—')
+                            : intl.formatMessage(
+                                messages.traktWatchlistStatusConnected
+                              )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.traktWatchlistStatusLastAttempt
+                          )}
+                          :{' '}
+                          {traktWatchlistStatus?.lastAttemptedSyncAt
+                            ? `${intl.formatDate(
+                                traktWatchlistStatus.lastAttemptedSyncAt,
+                                {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                }
+                              )} ${intl.formatTime(
+                                traktWatchlistStatus.lastAttemptedSyncAt,
+                                {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                }
+                              )}`
+                            : '—'}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.traktWatchlistStatusLastError
+                          )}
+                          : {traktWatchlistStatus?.lastError ?? '—'}
+                        </div>
+                        <div className="mt-4">
+                          <Button
+                            buttonType="ghost"
+                            type="button"
+                            disabled={!traktWatchlistStatus?.traktConnected}
+                            onClick={async () => {
+                              try {
+                                const response =
+                                  await axios.post<TraktWatchlistStatusResponse>(
+                                    `/api/v1/user/${user?.id}/settings/trakt-watchlist/sync`
+                                  );
+                                addToast(
+                                  `${intl.formatMessage(
+                                    messages.traktWatchlistSyncSuccess
+                                  )} ${intl.formatMessage(
+                                    messages.traktWatchlistImported,
+                                    {
+                                      count: response.data.totalItems ?? 0,
+                                    }
+                                  )}`,
+                                  {
+                                    appearance: 'success',
+                                    autoDismiss: true,
+                                  }
+                                );
+                                revalidateTraktWatchlistStatus(
+                                  response.data,
+                                  false
+                                );
+                              } catch (e) {
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.traktWatchlistSyncFailure
+                                  ),
+                                  {
+                                    appearance: 'error',
+                                    autoDismiss: true,
+                                  }
+                                );
+                              }
+                            }}
+                          >
+                            <ArrowPathIcon className="mr-2 h-5 w-5" />
+                            <span>
+                              {intl.formatMessage(
+                                messages.traktWatchlistSyncNow
+                              )}
+                            </span>
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="form-row">
@@ -701,10 +872,11 @@ const UserGeneralSettings = () => {
                       </span>
                     </label>
                     <div className="form-input-area">
-                      <Field
+                      <input
                         type="checkbox"
                         id="traktHistorySyncEnabled"
                         name="traktHistorySyncEnabled"
+                        checked={!!values.traktHistorySyncEnabled}
                         onChange={() => {
                           setFieldValue(
                             'traktHistorySyncEnabled',

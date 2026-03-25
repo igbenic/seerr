@@ -232,6 +232,11 @@ components:
           nullable: true
           description: 'Enable Trakt watch history sync for the user'
           example: true
+        traktWatchlistSyncEnabled:
+          type: boolean
+          nullable: true
+          description: 'Enable Trakt watchlist sync for the user'
+          example: true
     TraktHistoryStatus:
       type: object
       properties:
@@ -256,6 +261,30 @@ components:
           type: string
           nullable: true
           example: 2026-03-24T20:15:00.000Z
+    TraktWatchlistStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        traktConnected:
+          type: boolean
+          example: true
+        totalItems:
+          type: number
+          example: 250
+        lastAttemptedSyncAt:
+          type: string
+          nullable: true
+          example: 2026-03-25T15:30:00.000Z
+        lastSuccessfulSyncAt:
+          type: string
+          nullable: true
+          example: 2026-03-25T15:30:05.000Z
+        lastError:
+          type: string
+          nullable: true
+          example: null
     TraktHistoryItem:
       type: object
       properties:
@@ -5357,6 +5386,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TraktHistoryStatus'
+  /user/{userId}/settings/trakt-watchlist:
+    get:
+      summary: Get Trakt watchlist sync status for a user
+      description: Returns Trakt watchlist sync status for a specific user. Requires `MANAGE_USERS` permission if viewing other users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Trakt watchlist sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktWatchlistStatus'
+  /user/{userId}/settings/trakt-watchlist/sync:
+    post:
+      summary: Trigger Trakt watchlist sync for a user
+      description: Runs an immediate Trakt watchlist sync for a specific user. Requires `MANAGE_USERS` permission if syncing other users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Trakt watchlist sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktWatchlistStatus'
   /user/{userId}/settings/password:
     get:
       summary: Get password page informatiom

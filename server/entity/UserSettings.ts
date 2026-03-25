@@ -88,6 +88,18 @@ export class UserSettings {
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public traktHistoryLatestWatchedAt?: Date | null;
 
+  @Column({ default: false })
+  public traktWatchlistSyncEnabled?: boolean;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public traktWatchlistLastSyncAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public traktWatchlistLastSyncAttemptAt?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  public traktWatchlistLastError?: string | null;
+
   @Column({
     type: 'text',
     nullable: true,

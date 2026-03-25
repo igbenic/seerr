@@ -16,6 +16,7 @@ import {
   isTraktConfigured,
   type TraktAuthUser,
 } from '@server/lib/trakt';
+import { syncTraktWatchlistForUser } from '@server/lib/traktWatchlist';
 import { randomUUID } from 'crypto';
 
 const PREVIEW_CACHE_PREFIX = 'watchlist-import-preview:';
@@ -202,6 +203,15 @@ export const confirmImdbImport = async (
   await getRepository(User).update(userId, {
     imdbLastImportAt: new Date(),
   });
+
+  if (result.added > 0) {
+    try {
+      await syncTraktWatchlistForUser(userId);
+    } catch {
+      // The import already succeeded in Trakt; leave watchlist cache refresh to the next sync.
+    }
+  }
+
   previewCache.del(previewCacheKey(previewToken));
 
   return {

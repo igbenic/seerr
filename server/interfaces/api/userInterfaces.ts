@@ -56,3 +56,12 @@ export interface TraktHistoryStatusResponse {
   totalItems: number;
   traktConnected: boolean;
 }
+
+export interface TraktWatchlistStatusResponse {
+  enabled: boolean;
+  lastAttemptedSyncAt?: Date | null;
+  lastError?: string | null;
+  lastSuccessfulSyncAt?: Date | null;
+  totalItems: number;
+  traktConnected: boolean;
+}

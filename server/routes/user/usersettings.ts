@@ -27,6 +27,10 @@ import {
   getTraktHistoryStatus,
   syncTraktHistoryForUser,
 } from '@server/lib/traktHistory';
+import {
+  getTraktWatchlistStatus,
+  syncTraktWatchlistForUser,
+} from '@server/lib/traktWatchlist';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { ApiError } from '@server/types/error';
@@ -80,6 +84,7 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         watchlistSyncTv: user.settings?.watchlistSyncTv,
         hideWatched: user.settings?.hideWatched,
         traktHistorySyncEnabled: user.settings?.traktHistorySyncEnabled,
+        traktWatchlistSyncEnabled: user.settings?.traktWatchlistSyncEnabled,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -148,6 +153,7 @@ userSettingsRoutes.post<
         watchlistSyncTv: req.body.watchlistSyncTv,
         hideWatched: req.body.hideWatched,
         traktHistorySyncEnabled: req.body.traktHistorySyncEnabled,
+        traktWatchlistSyncEnabled: req.body.traktWatchlistSyncEnabled,
       });
     } else {
       user.settings.discordId = req.body.discordId;
@@ -159,6 +165,8 @@ userSettingsRoutes.post<
       user.settings.watchlistSyncTv = req.body.watchlistSyncTv;
       user.settings.hideWatched = req.body.hideWatched;
       user.settings.traktHistorySyncEnabled = req.body.traktHistorySyncEnabled;
+      user.settings.traktWatchlistSyncEnabled =
+        req.body.traktWatchlistSyncEnabled;
     }
 
     const savedUser = await userRepository.save(user);
@@ -174,6 +182,8 @@ userSettingsRoutes.post<
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
       hideWatched: savedUser.settings?.hideWatched,
       traktHistorySyncEnabled: savedUser.settings?.traktHistorySyncEnabled,
+      traktWatchlistSyncEnabled:
+        savedUser.settings?.traktWatchlistSyncEnabled,
       email: savedUser.email,
     });
   } catch (e) {
@@ -232,6 +242,34 @@ userSettingsRoutes.post<{ id: string }>(
       return res
         .status(200)
         .json(await syncTraktHistoryForUser(Number(req.params.id)));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.get<{ id: string }>(
+  '/trakt-watchlist',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      return res
+        .status(200)
+        .json(await getTraktWatchlistStatus(Number(req.params.id)));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/trakt-watchlist/sync',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      return res
+        .status(200)
+        .json(await syncTraktWatchlistForUser(Number(req.params.id)));
     } catch (e) {
       return next({ status: 500, message: e.message });
     }

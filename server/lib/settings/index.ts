@@ -356,6 +356,7 @@ export type JobId =
   | 'plex-watchlist-sync'
   | 'plex-refresh-token'
   | 'trakt-history-sync'
+  | 'trakt-watchlist-sync'
   | 'radarr-scan'
   | 'sonarr-scan'
   | 'download-sync'
@@ -574,6 +575,9 @@ class Settings {
         },
         'trakt-history-sync': {
           schedule: '0 0 */6 * * *',
+        },
+        'trakt-watchlist-sync': {
+          schedule: '0 0 * * * *',
         },
         'radarr-scan': {
           schedule: '0 0 4 * * *',

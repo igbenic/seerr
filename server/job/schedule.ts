@@ -14,6 +14,7 @@ import { sonarrScanner } from '@server/lib/scanners/sonarr';
 import type { JobId } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { syncTraktHistoryForEnabledUsers } from '@server/lib/traktHistory';
+import { syncTraktWatchlistForEnabledUsers } from '@server/lib/traktWatchlist';
 import watchlistSync from '@server/lib/watchlistsync';
 import logger from '@server/logger';
 import schedule from 'node-schedule';
@@ -162,6 +163,25 @@ export const startJobs = (): void => {
         logger.error('Failed to sync Trakt watch history', {
           errorMessage: e.message,
           label: 'Trakt History',
+        });
+      });
+    }),
+  });
+
+  scheduledJobs.push({
+    id: 'trakt-watchlist-sync',
+    name: 'Trakt Watchlist Sync',
+    type: 'process',
+    interval: 'hours',
+    cronSchedule: jobs['trakt-watchlist-sync'].schedule,
+    job: schedule.scheduleJob(jobs['trakt-watchlist-sync'].schedule, () => {
+      logger.info('Starting scheduled job: Trakt Watchlist Sync', {
+        label: 'Jobs',
+      });
+      syncTraktWatchlistForEnabledUsers().catch((e) => {
+        logger.error('Failed to sync Trakt watchlist', {
+          errorMessage: e.message,
+          label: 'Trakt Watchlist',
         });
       });
     }),

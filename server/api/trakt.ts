@@ -150,6 +150,13 @@ export interface TraktHistoryPage<T> {
   pageCount: number;
 }
 
+export interface TraktWatchlistPage<T> {
+  items: T[];
+  itemCount: number;
+  page: number;
+  pageCount: number;
+}
+
 export interface TraktWatchedMovie {
   plays: number;
   last_watched_at: string;
@@ -351,16 +358,40 @@ class TraktAPI {
   public async getWatchlist(
     limit = 100
   ): Promise<(TraktListedMovie | TraktListedShow)[]> {
-    return this.authenticatedGet<(TraktListedMovie | TraktListedShow)[]>(
-      '/users/me/watchlist/movie,show/rank',
-      {
-        params: {
-          extended: 'full',
-          limit,
-        },
+    const items: (TraktListedMovie | TraktListedShow)[] = [];
+    let page = 1;
+    let pageCount = 1;
+
+    do {
+      const response = await this.getWatchlistPage(page, limit);
+      items.push(...response.items);
+      pageCount = response.pageCount;
+      page += 1;
+    } while (page <= pageCount);
+
+    return items;
+  }
+
+  public async getWatchlistPage(
+    page = 1,
+    limit = 100
+  ): Promise<TraktWatchlistPage<TraktListedMovie | TraktListedShow>> {
+    const response = await this.authenticatedGetWithResponse<
+      (TraktListedMovie | TraktListedShow)[]
+    >('/users/me/watchlist/movie,show/rank', {
+      params: {
+        extended: 'full',
+        limit,
+        page,
       },
-      300
-    );
+    });
+
+    return {
+      itemCount: Number(response.headers['x-pagination-item-count'] ?? 0),
+      items: response.data,
+      page,
+      pageCount: Number(response.headers['x-pagination-page-count'] ?? 1),
+    };
   }
 
   public async addToWatchlist(
