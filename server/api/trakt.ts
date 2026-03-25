@@ -18,6 +18,41 @@ interface TraktSyncWatchlistPayload {
   shows?: { ids: Pick<TraktIds, 'imdb'> }[];
 }
 
+interface TraktEpisode {
+  ids: TraktIds;
+  number: number;
+  season: number;
+  title?: string | null;
+}
+
+interface TraktSyncHistoryPayload {
+  movies?: {
+    ids: Partial<Pick<TraktIds, 'imdb' | 'tmdb' | 'trakt'>>;
+    watched_at?: string;
+  }[];
+  shows?: {
+    ids: Partial<Pick<TraktIds, 'imdb' | 'tmdb' | 'trakt' | 'tvdb'>>;
+    seasons: {
+      number: number;
+      episodes: {
+        number: number;
+        watched_at?: string;
+      }[];
+    }[];
+  }[];
+}
+
+interface TraktSyncHistoryResultGroup {
+  episodes?: number;
+  movies?: number;
+  shows?: number;
+}
+
+interface TraktSyncHistoryResponseBody {
+  added?: TraktSyncHistoryResultGroup;
+  deleted?: TraktSyncHistoryResultGroup;
+}
+
 interface TraktSyncWatchlistResultGroup {
   episodes?: number;
   movies?: number;
@@ -105,6 +140,14 @@ export interface TraktEpisodeHistoryItem {
   action: string;
   type: 'episode';
   show: TraktShow;
+  episode: TraktEpisode;
+}
+
+export interface TraktHistoryPage<T> {
+  items: T[];
+  itemCount: number;
+  page: number;
+  pageCount: number;
 }
 
 export interface TraktWatchedMovie {
@@ -149,6 +192,10 @@ export interface TraktWatchlistSyncResponse {
   added: number;
   existing: number;
   notFound: TraktWatchlistSyncNotFoundItem[];
+}
+
+export interface TraktHistorySyncResponse {
+  affected: number;
 }
 
 export class TraktAuthenticationError extends Error {
@@ -376,6 +423,28 @@ class TraktAPI {
     );
   }
 
+  public async getMovieHistoryPage(
+    page = 1,
+    limit = 100
+  ): Promise<TraktHistoryPage<TraktMovieHistoryItem>> {
+    return this.getHistoryPage<TraktMovieHistoryItem>(
+      '/users/me/history/movies',
+      page,
+      limit
+    );
+  }
+
+  public async getShowHistoryPage(
+    page = 1,
+    limit = 100
+  ): Promise<TraktHistoryPage<TraktEpisodeHistoryItem>> {
+    return this.getHistoryPage<TraktEpisodeHistoryItem>(
+      '/users/me/history/shows',
+      page,
+      limit
+    );
+  }
+
   public async getWatchedMovies(): Promise<TraktWatchedMovie[]> {
     return this.authenticatedGet<TraktWatchedMovie[]>(
       '/users/me/watched/movies',
@@ -418,6 +487,33 @@ class TraktAPI {
       },
       300
     );
+  }
+
+  public async addToHistory(
+    payload: TraktSyncHistoryPayload
+  ): Promise<TraktHistorySyncResponse> {
+    const response = await this.authenticatedPost<
+      TraktSyncHistoryResponseBody,
+      TraktSyncHistoryPayload
+    >('/sync/history', payload);
+
+    return {
+      affected: (response.added?.movies ?? 0) + (response.added?.episodes ?? 0),
+    };
+  }
+
+  public async removeFromHistory(
+    payload: TraktSyncHistoryPayload
+  ): Promise<TraktHistorySyncResponse> {
+    const response = await this.authenticatedPost<
+      TraktSyncHistoryResponseBody,
+      TraktSyncHistoryPayload
+    >('/sync/history/remove', payload);
+
+    return {
+      affected:
+        (response.deleted?.movies ?? 0) + (response.deleted?.episodes ?? 0),
+    };
   }
 
   private applyToken(token: TraktTokenResponse) {
@@ -514,6 +610,58 @@ class TraktAPI {
         });
 
         return response.data;
+      }
+
+      throw error;
+    }
+  }
+
+  private async getHistoryPage<T>(
+    endpoint: string,
+    page: number,
+    limit: number
+  ): Promise<TraktHistoryPage<T>> {
+    const response = await this.authenticatedGetWithResponse<T[]>(endpoint, {
+      params: {
+        extended: 'full',
+        limit,
+        page,
+      },
+    });
+
+    return {
+      itemCount: Number(response.headers['x-pagination-item-count'] ?? 0),
+      items: response.data,
+      page,
+      pageCount: Number(response.headers['x-pagination-page-count'] ?? 1),
+    };
+  }
+
+  private async authenticatedGetWithResponse<T>(
+    endpoint: string,
+    config?: AxiosRequestConfig
+  ) {
+    await this.ensureAccessToken();
+
+    try {
+      return await this.axios.get<T>(endpoint, {
+        ...config,
+        headers: {
+          ...config?.headers,
+          ...this.authHeaders(),
+        },
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        await this.refreshAccessToken(true);
+
+        return this.axios.get<T>(endpoint, {
+          ...config,
+          headers: {
+            ...config?.headers,
+            ...this.authHeaders(),
+          },
+        });
       }
 
       throw error;

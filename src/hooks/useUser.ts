@@ -43,6 +43,7 @@ export interface UserSettings {
   watchlistSyncMovies?: boolean;
   watchlistSyncTv?: boolean;
   hideWatched?: boolean;
+  traktHistorySyncEnabled?: boolean;
 }
 
 interface UserHookResponse {

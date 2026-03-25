@@ -227,6 +227,135 @@ components:
           nullable: true
           description: 'Hide watched Trakt titles from Trakt-powered discover surfaces'
           example: false
+        traktHistorySyncEnabled:
+          type: boolean
+          nullable: true
+          description: 'Enable Trakt watch history sync for the user'
+          example: true
+    TraktHistoryStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        traktConnected:
+          type: boolean
+          example: true
+        totalItems:
+          type: number
+          example: 128
+        lastAttemptedSyncAt:
+          type: string
+          nullable: true
+          example: 2026-03-25T14:30:00.000Z
+        lastSuccessfulSyncAt:
+          type: string
+          nullable: true
+          example: 2026-03-25T14:30:12.000Z
+        latestImportedWatchedAt:
+          type: string
+          nullable: true
+          example: 2026-03-24T20:15:00.000Z
+    TraktHistoryItem:
+      type: object
+      properties:
+        id:
+          type: number
+          example: 1
+        title:
+          type: string
+          example: 'Dune: Part Two'
+        mediaType:
+          type: string
+          enum: [movie, tv]
+        tmdbId:
+          type: number
+          nullable: true
+          example: 693134
+        tvdbId:
+          type: number
+          nullable: true
+          example: 12345
+        traktId:
+          type: number
+          nullable: true
+          example: 778899
+        imdbId:
+          type: string
+          nullable: true
+          example: tt15239678
+        year:
+          type: number
+          nullable: true
+          example: 2024
+        watchedAt:
+          type: string
+          example: 2026-03-24T20:15:00.000Z
+    TraktHistoryList:
+      type: object
+      properties:
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraktHistoryItem'
+    WatchedStatus:
+      type: object
+      properties:
+        watched:
+          type: boolean
+          example: true
+        watchedAt:
+          type: string
+          nullable: true
+          example: 2026-03-25T14:30:00.000Z
+    EpisodeWatchedStatus:
+      allOf:
+        - $ref: '#/components/schemas/WatchedStatus'
+        - type: object
+          properties:
+            airDate:
+              type: string
+              nullable: true
+              example: 2024-11-12
+    SeasonWatchedStatus:
+      allOf:
+        - $ref: '#/components/schemas/WatchedStatus'
+        - type: object
+          properties:
+            eligibleEpisodeCount:
+              type: number
+              example: 8
+            watchedEpisodeCount:
+              type: number
+              example: 8
+    ShowWatchedStatus:
+      allOf:
+        - $ref: '#/components/schemas/WatchedStatus'
+        - type: object
+          properties:
+            eligibleEpisodeCount:
+              type: number
+              example: 24
+            watchedEpisodeCount:
+              type: number
+              example: 16
+            eligibleSeasonCount:
+              type: number
+              example: 3
+            watchedSeasonCount:
+              type: number
+              example: 2
+    WatchMutationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        affectedItems:
+          type: number
+          example: 8
     MainSettings:
       type: object
       properties:
@@ -1113,6 +1242,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WatchProviders'
+        userWatchStatus:
+          $ref: '#/components/schemas/WatchedStatus'
     Episode:
       type: object
       properties:
@@ -1140,6 +1271,8 @@ components:
           type: number
         voteCount:
           type: number
+        userWatchStatus:
+          $ref: '#/components/schemas/EpisodeWatchedStatus'
     Season:
       type: object
       properties:
@@ -1158,6 +1291,8 @@ components:
           type: string
         seasonNumber:
           type: number
+        userWatchStatus:
+          $ref: '#/components/schemas/SeasonWatchedStatus'
         episodes:
           type: array
           items:
@@ -1300,6 +1435,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WatchProviders'
+        userWatchStatus:
+          $ref: '#/components/schemas/ShowWatchedStatus'
     MediaRequest:
       type: object
       properties:
@@ -2048,6 +2185,94 @@ components:
         telegramSendSilently:
           type: boolean
           nullable: true
+    ImdbImportItem:
+      type: object
+      properties:
+        imdbId:
+          type: string
+        imdbType:
+          type: string
+        status:
+          type: string
+          enum:
+            - eligible
+            - existing
+            - skipped
+        title:
+          type: string
+        reason:
+          type: string
+          nullable: true
+      required:
+        - imdbId
+        - imdbType
+        - status
+        - title
+    ImdbImportPreviewResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImdbImportItem'
+        previewToken:
+          type: string
+        summary:
+          type: object
+          properties:
+            alreadyOnTrakt:
+              type: number
+            eligibleToAdd:
+              type: number
+            skippedUnsupported:
+              type: number
+            total:
+              type: number
+          required:
+            - alreadyOnTrakt
+            - eligibleToAdd
+            - skippedUnsupported
+            - total
+      required:
+        - items
+        - previewToken
+        - summary
+    ImdbImportConfirmResponse:
+      type: object
+      properties:
+        added:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImdbImportItem'
+        notFound:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImdbImportItem'
+        skippedUnsupported:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImdbImportItem'
+        summary:
+          type: object
+          properties:
+            added:
+              type: number
+            existing:
+              type: number
+            notFound:
+              type: number
+            skippedUnsupported:
+              type: number
+          required:
+            - added
+            - existing
+            - notFound
+            - skippedUnsupported
+      required:
+        - added
+        - notFound
+        - skippedUnsupported
+        - summary
     NotificationAgentTypes:
       type: object
       properties:
@@ -5094,6 +5319,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserSettings'
+  /user/{userId}/settings/trakt-history:
+    get:
+      summary: Get Trakt history sync status for a user
+      description: Returns Trakt watch history sync status for a specific user. Requires `MANAGE_USERS` permission if viewing other users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Trakt history sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktHistoryStatus'
+  /user/{userId}/settings/trakt-history/sync:
+    post:
+      summary: Trigger Trakt history sync for a user
+      description: Runs an immediate Trakt watch history sync for a specific user. Requires `MANAGE_USERS` permission if syncing other users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Trakt history sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktHistoryStatus'
   /user/{userId}/settings/password:
     get:
       summary: Get password page informatiom
@@ -5243,6 +5506,66 @@ paths:
           description: Unlink request invalid
         '404':
           description: User does not exist
+  /user/{userId}/settings/linked-accounts/imdb/import/preview:
+    post:
+      summary: Preview an IMDb CSV import for the current user
+      description: Parses an uploaded IMDb watchlist CSV export and returns a preview of items that can be imported into the linked Trakt watchlist.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                csvContent:
+                  type: string
+              required:
+                - csvContent
+      responses:
+        '200':
+          description: IMDb import preview returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImdbImportPreviewResponse'
+  /user/{userId}/settings/linked-accounts/imdb/import/confirm:
+    post:
+      summary: Confirm an IMDb CSV import for the current user
+      description: Imports the previously previewed IMDb watchlist items into the linked Trakt watchlist.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                previewToken:
+                  type: string
+              required:
+                - previewToken
+      responses:
+        '200':
+          description: IMDb import result returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImdbImportConfirmResponse'
   /user/{userId}/settings/notifications:
     get:
       summary: Get notification settings for a user
@@ -5374,6 +5697,46 @@ paths:
                   source:
                     type: string
                     enum: [tautulli, trakt]
+  /user/{userId}/trakt_history:
+    get:
+      summary: Get persisted Trakt watch history
+      description: |
+        Returns paginated Trakt watch history entries imported into Seerr for a specific user.
+
+        Requires the `ADMIN` permission to fetch results for other users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: take
+          schema:
+            type: number
+            nullable: true
+            example: 20
+        - in: query
+          name: skip
+          schema:
+            type: number
+            nullable: true
+            example: 0
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+            enum: [all, movie, tv]
+            default: all
+      responses:
+        '200':
+          description: Trakt history items returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktHistoryList'
   /search:
     get:
       summary: Search for movies, TV shows, or people
@@ -6768,6 +7131,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MovieDetails'
+  /movie/{movieId}/watch:
+    post:
+      summary: Mark a movie watched
+      tags:
+        - movies
+      parameters:
+        - in: path
+          name: movieId
+          required: true
+          schema:
+            type: number
+            example: 337401
+      responses:
+        '200':
+          description: Movie marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
+    delete:
+      summary: Mark a movie unwatched
+      tags:
+        - movies
+      parameters:
+        - in: path
+          name: movieId
+          required: true
+          schema:
+            type: number
+            example: 337401
+      responses:
+        '200':
+          description: Movie marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
   /movie/{movieId}/recommendations:
     get:
       summary: Get recommended movies
@@ -6982,6 +7382,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TvDetails'
+  /tv/{tvId}/watch:
+    post:
+      summary: Mark a show watched
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+      responses:
+        '200':
+          description: Show marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
+    delete:
+      summary: Mark a show unwatched
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+      responses:
+        '200':
+          description: Show marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
   /tv/{tvId}/season/{seasonNumber}:
     get:
       summary: Get season details and episode list
@@ -7013,6 +7450,116 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Season'
+  /tv/{tvId}/season/{seasonNumber}/watch:
+    post:
+      summary: Mark a season watched
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: number
+            example: 1
+      responses:
+        '200':
+          description: Season marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
+    delete:
+      summary: Mark a season unwatched
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: number
+            example: 1
+      responses:
+        '200':
+          description: Season marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
+  /tv/{tvId}/season/{seasonNumber}/episode/{episodeNumber}/watch:
+    post:
+      summary: Mark an episode watched
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: number
+            example: 1
+        - in: path
+          name: episodeNumber
+          required: true
+          schema:
+            type: number
+            example: 3
+      responses:
+        '200':
+          description: Episode marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
+    delete:
+      summary: Mark an episode unwatched
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: number
+            example: 1
+        - in: path
+          name: episodeNumber
+          required: true
+          schema:
+            type: number
+            example: 3
+      responses:
+        '200':
+          description: Episode marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchMutationResponse'
   /tv/{tvId}/recommendations:
     get:
       summary: Get recommended TV series

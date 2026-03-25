@@ -38,6 +38,7 @@ import { Disclosure, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import {
   ArrowRightCircleIcon,
+  CheckCircleIcon,
   CogIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
@@ -105,6 +106,9 @@ const messages = defineMessages('components.TvDetails', {
   watchlistError: 'Something went wrong. Please try again.',
   removefromwatchlist: 'Remove From Watchlist',
   addtowatchlist: 'Add To Watchlist',
+  markWatched: 'Mark Watched',
+  markUnwatched: 'Mark Unwatched',
+  watchedError: 'Unable to update watched status.',
 });
 
 interface TvDetailsProps {
@@ -125,6 +129,8 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     !tv?.onUserWatchlist
   );
   const [isBlocklistUpdating, setIsBlocklistUpdating] =
+    useState<boolean>(false);
+  const [isWatchStatusUpdating, setIsWatchStatusUpdating] =
     useState<boolean>(false);
   const [showBlocklistModal, setShowBlocklistModal] = useState(false);
   const { addToast } = useToasts();
@@ -459,6 +465,31 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     closeBlocklistModal();
   };
 
+  const onClickWatchStatusBtn = async (): Promise<void> => {
+    if (!data) {
+      return;
+    }
+
+    setIsWatchStatusUpdating(true);
+
+    try {
+      if (data.userWatchStatus?.watched) {
+        await axios.delete(`/api/v1/tv/${data.id}/watch`);
+      } else {
+        await axios.post(`/api/v1/tv/${data.id}/watch`);
+      }
+
+      await revalidate();
+    } catch {
+      addToast(intl.formatMessage(messages.watchedError), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      setIsWatchStatusUpdating(false);
+    }
+  };
+
   const showHideButton = hasPermission([Permission.MANAGE_BLOCKLIST], {
     type: 'or',
   });
@@ -626,6 +657,34 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
           {data?.mediaInfo?.status !== MediaStatus.BLOCKLISTED &&
             user?.userType !== UserType.PLEX && (
               <>
+                {user?.traktUsername && data.userWatchStatus && (
+                  <Tooltip
+                    content={intl.formatMessage(
+                      data.userWatchStatus.watched
+                        ? messages.markUnwatched
+                        : messages.markWatched
+                    )}
+                  >
+                    <Button
+                      buttonType={data.userWatchStatus.watched ? 'primary' : 'ghost'}
+                      className="z-40 mr-2"
+                      buttonSize={'md'}
+                      onClick={onClickWatchStatusBtn}
+                    >
+                      {isWatchStatusUpdating ? (
+                        <Spinner />
+                      ) : (
+                        <CheckCircleIcon
+                          className={
+                            data.userWatchStatus.watched
+                              ? 'text-green-400'
+                              : undefined
+                          }
+                        />
+                      )}
+                    </Button>
+                  </Tooltip>
+                )}
                 {toggleWatchlist ? (
                   <Tooltip
                     content={intl.formatMessage(messages.addtowatchlist)}
@@ -1078,6 +1137,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                             <Season
                               tvId={data.id}
                               seasonNumber={season.seasonNumber}
+                              onUpdate={revalidate}
                             />
                           </Disclosure.Panel>
                         </Transition>

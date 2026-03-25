@@ -13,6 +13,7 @@ import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
 import type {
   QuotaResponse,
+  TraktHistoryListResponse,
   UserRequestsResponse,
   UserWatchDataResponse,
 } from '@server/interfaces/api/userInterfaces';
@@ -80,6 +81,12 @@ const UserProfile = () => {
         ? `/api/v1/user/${user.id}/watch_data`
         : null
     );
+  const { data: traktHistory } = useSWR<TraktHistoryListResponse>(
+    user?.traktUsername &&
+      (user.id === currentUser?.id || currentHasPermission(Permission.ADMIN))
+      ? `/api/v1/user/${user.id}/trakt_history?take=10&skip=0&mediaType=all`
+      : null
+  );
 
   const { data: watchlistItems, error: watchlistError } =
     useSWR<WatchlistResponse>(
@@ -399,6 +406,80 @@ const UserProfile = () => {
                 />
               ))}
             />
+          </>
+        )}
+      {!!user?.traktUsername &&
+        (user.id === currentUser?.id || currentHasPermission(Permission.ADMIN)) &&
+        (!!traktHistory?.results.length ||
+          !!user.settings?.traktHistorySyncEnabled) && (
+          <>
+            <div className="slider-header">
+              <Link
+                href={
+                  user.id === currentUser?.id
+                    ? '/profile/history'
+                    : `/users/${user.id}/history`
+                }
+                className="slider-title"
+              >
+                <span>Trakt History</span>
+                <ArrowRightCircleIcon />
+              </Link>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/70 shadow-lg">
+              {traktHistory?.results?.length ? (
+                <div className="divide-y divide-gray-800">
+                  {traktHistory.results.map((item) => {
+                    const href =
+                      item.tmdbId != null
+                        ? `/${item.mediaType === 'movie' ? 'movie' : 'tv'}/${
+                            item.tmdbId
+                          }`
+                        : null;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          {href ? (
+                            <Link
+                              href={href}
+                              className="truncate text-sm font-semibold text-white transition hover:text-gray-300"
+                            >
+                              {item.title}
+                              {item.year ? ` (${item.year})` : ''}
+                            </Link>
+                          ) : (
+                            <div className="truncate text-sm font-semibold text-white">
+                              {item.title}
+                              {item.year ? ` (${item.year})` : ''}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-400">
+                          {intl.formatDate(item.watchedAt, {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}{' '}
+                          {intl.formatTime(item.watchedAt, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-4 py-6 text-sm text-gray-400">
+                  Trakt history sync is enabled, but no items have been imported
+                  yet.
+                </div>
+              )}
+            </div>
           </>
         )}
     </>

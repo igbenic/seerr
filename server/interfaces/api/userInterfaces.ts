@@ -29,3 +29,30 @@ export interface UserWatchDataResponse {
   playCount: number;
   source?: 'tautulli' | 'trakt';
 }
+
+export type TraktHistoryMediaType = 'all' | 'movie' | 'tv';
+
+export interface TraktHistoryItemResponse {
+  id: number;
+  imdbId?: string | null;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  tmdbId?: number | null;
+  traktId?: number | null;
+  tvdbId?: number | null;
+  watchedAt: Date;
+  year?: number | null;
+}
+
+export interface TraktHistoryListResponse extends PaginatedResponse {
+  results: TraktHistoryItemResponse[];
+}
+
+export interface TraktHistoryStatusResponse {
+  enabled: boolean;
+  lastAttemptedSyncAt?: Date | null;
+  lastSuccessfulSyncAt?: Date | null;
+  latestImportedWatchedAt?: Date | null;
+  totalItems: number;
+  traktConnected: boolean;
+}

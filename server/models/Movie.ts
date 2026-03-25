@@ -4,6 +4,7 @@ import type {
   TmdbProductionCompany,
 } from '@server/api/themoviedb/interfaces';
 import type Media from '@server/entity/Media';
+import type { WatchedStatus } from '@server/interfaces/api/traktWatchInterfaces';
 import type {
   Cast,
   Crew,
@@ -86,6 +87,7 @@ export interface MovieDetails {
   watchProviders?: WatchProviders[];
   keywords: Keyword[];
   onUserWatchlist?: boolean;
+  userWatchStatus?: WatchedStatus;
 }
 
 export const mapProductionCompany = (
@@ -103,7 +105,8 @@ export const mapProductionCompany = (
 export const mapMovieDetails = (
   movie: TmdbMovieDetails,
   media?: Media,
-  userWatchlist?: boolean
+  userWatchlist?: boolean,
+  userWatchStatus?: WatchedStatus
 ): MovieDetails => ({
   id: movie.id,
   adult: movie.adult,
@@ -151,4 +154,5 @@ export const mapMovieDetails = (
     name: keyword.name,
   })),
   onUserWatchlist: userWatchlist,
+  userWatchStatus,
 });

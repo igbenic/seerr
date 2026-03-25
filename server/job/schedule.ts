@@ -13,6 +13,7 @@ import { radarrScanner } from '@server/lib/scanners/radarr';
 import { sonarrScanner } from '@server/lib/scanners/sonarr';
 import type { JobId } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
+import { syncTraktHistoryForEnabledUsers } from '@server/lib/traktHistory';
 import watchlistSync from '@server/lib/watchlistsync';
 import logger from '@server/logger';
 import schedule from 'node-schedule';
@@ -146,6 +147,25 @@ export const startJobs = (): void => {
       cancelFn: () => jellyfinFullScanner.cancel(),
     });
   }
+
+  scheduledJobs.push({
+    id: 'trakt-history-sync',
+    name: 'Trakt Watch History Sync',
+    type: 'process',
+    interval: 'hours',
+    cronSchedule: jobs['trakt-history-sync'].schedule,
+    job: schedule.scheduleJob(jobs['trakt-history-sync'].schedule, () => {
+      logger.info('Starting scheduled job: Trakt Watch History Sync', {
+        label: 'Jobs',
+      });
+      syncTraktHistoryForEnabledUsers().catch((e) => {
+        logger.error('Failed to sync Trakt watch history', {
+          errorMessage: e.message,
+          label: 'Trakt History',
+        });
+      });
+    }),
+  });
 
   // Run full radarr scan every 24 hours
   scheduledJobs.push({

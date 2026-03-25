@@ -13,12 +13,15 @@ import { Watchlist } from '@server/entity/Watchlist';
 import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
 import type {
   QuotaResponse,
+  TraktHistoryListResponse,
+  TraktHistoryMediaType,
   UserRequestsResponse,
   UserResultsResponse,
   UserWatchDataResponse,
 } from '@server/interfaces/api/userInterfaces';
 import { Permission, hasPermission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import { listTraktHistory } from '@server/lib/traktHistory';
 import { getTraktWatchData } from '@server/lib/trakt';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -911,6 +914,31 @@ router.get<{ id: string }, UserWatchDataResponse>(
         status: 500,
         message: 'Failed to fetch user watch data.',
       });
+    }
+  }
+);
+
+router.get<{ id: string }, TraktHistoryListResponse>(
+  '/:id/trakt_history',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const pageSize = req.query.take ? Number(req.query.take) : 20;
+      const skip = req.query.skip ? Number(req.query.skip) : 0;
+      const mediaType = req.query.mediaType
+        ? (req.query.mediaType.toString() as TraktHistoryMediaType)
+        : 'all';
+
+      return res.status(200).json(
+        await listTraktHistory({
+          mediaType,
+          skip,
+          take: pageSize,
+          userId: Number(req.params.id),
+        })
+      );
+    } catch (e) {
+      return next({ status: 500, message: e.message });
     }
   }
 );

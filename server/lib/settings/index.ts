@@ -355,6 +355,7 @@ export type JobId =
   | 'plex-full-scan'
   | 'plex-watchlist-sync'
   | 'plex-refresh-token'
+  | 'trakt-history-sync'
   | 'radarr-scan'
   | 'sonarr-scan'
   | 'download-sync'
@@ -570,6 +571,9 @@ class Settings {
         },
         'plex-refresh-token': {
           schedule: '0 0 5 * * *',
+        },
+        'trakt-history-sync': {
+          schedule: '0 0 */6 * * *',
         },
         'radarr-scan': {
           schedule: '0 0 4 * * *',

@@ -6,8 +6,14 @@ import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
+import {
+  markMovieUnwatched,
+  markMovieWatched,
+} from '@server/lib/traktWatchActions';
+import { getLatestMovieWatchStatus } from '@server/lib/traktWatchState';
 import logger from '@server/logger';
 import { mapMovieDetails } from '@server/models/Movie';
+import { isAuthenticated } from '@server/middleware/auth';
 import { mapMovieResult } from '@server/models/Search';
 import { Router } from 'express';
 
@@ -34,7 +40,15 @@ movieRoutes.get('/:id', async (req, res, next) => {
       },
     });
 
-    const data = mapMovieDetails(tmdbMovie, media, onUserWatchlist);
+    const userWatchStatus = req.user
+      ? await getLatestMovieWatchStatus(req.user.id, tmdbMovie.id)
+      : undefined;
+    const data = mapMovieDetails(
+      tmdbMovie,
+      media,
+      onUserWatchlist,
+      userWatchStatus
+    );
 
     // TMDB issue where it doesnt fallback to English when no overview is available in requested locale.
     if (!data.overview) {
@@ -52,6 +66,71 @@ movieRoutes.get('/:id', async (req, res, next) => {
     return next({
       status: 500,
       message: 'Unable to retrieve movie.',
+    });
+  }
+});
+
+movieRoutes.post('/:id/watch', isAuthenticated(), async (req, res, next) => {
+  const tmdb = new TheMovieDb();
+
+  try {
+    if (!req.user) {
+      return next({
+        status: 401,
+        message: 'You must be logged in to mark media watched.',
+      });
+    }
+
+    const movie = await tmdb.getMovie({
+      movieId: Number(req.params.id),
+    });
+    const response = await markMovieWatched({
+      ids: {
+        imdb: movie.imdb_id,
+      },
+      title: movie.title,
+      tmdbId: movie.id,
+      userId: req.user.id,
+      year: movie.release_date ? Number(movie.release_date.slice(0, 4)) : null,
+    });
+
+    return res.status(200).json(response);
+  } catch (error) {
+    return next({
+      status: 500,
+      message: error instanceof Error ? error.message : 'Unable to mark watched.',
+    });
+  }
+});
+
+movieRoutes.delete('/:id/watch', isAuthenticated(), async (req, res, next) => {
+  const tmdb = new TheMovieDb();
+
+  try {
+    if (!req.user) {
+      return next({
+        status: 401,
+        message: 'You must be logged in to mark media unwatched.',
+      });
+    }
+
+    const movie = await tmdb.getMovie({
+      movieId: Number(req.params.id),
+    });
+    const response = await markMovieUnwatched({
+      ids: {
+        imdb: movie.imdb_id,
+      },
+      tmdbId: movie.id,
+      userId: req.user.id,
+    });
+
+    return res.status(200).json(response);
+  } catch (error) {
+    return next({
+      status: 500,
+      message:
+        error instanceof Error ? error.message : 'Unable to mark unwatched.',
     });
   }
 });

@@ -7,6 +7,11 @@ import type {
   TmdbTvSeasonResult,
 } from '@server/api/themoviedb/interfaces';
 import type Media from '@server/entity/Media';
+import type {
+  EpisodeWatchedStatus,
+  SeasonWatchedStatus,
+  ShowWatchedStatus,
+} from '@server/interfaces/api/traktWatchInterfaces';
 import type { Video } from './Movie';
 import type {
   Cast,
@@ -26,7 +31,7 @@ import {
   mapWatchProviders,
 } from './common';
 
-interface Episode {
+export interface Episode {
   id: number;
   name: string;
   airDate: string | null;
@@ -38,9 +43,10 @@ interface Episode {
   stillPath?: string;
   voteAverage: number;
   voteCount: number;
+  userWatchStatus?: EpisodeWatchedStatus;
 }
 
-interface Season {
+export interface Season {
   airDate: string;
   id: number;
   episodeCount: number;
@@ -48,6 +54,7 @@ interface Season {
   overview: string;
   posterPath?: string;
   seasonNumber: number;
+  userWatchStatus?: SeasonWatchedStatus;
 }
 
 export interface SeasonWithEpisodes extends Omit<Season, 'episodeCount'> {
@@ -112,9 +119,13 @@ export interface TvDetails {
   mediaInfo?: Media;
   watchProviders?: WatchProviders[];
   onUserWatchlist?: boolean;
+  userWatchStatus?: ShowWatchedStatus;
 }
 
-const mapEpisodeResult = (episode: TmdbTvEpisodeResult): Episode => ({
+const mapEpisodeResult = (
+  episode: TmdbTvEpisodeResult,
+  userWatchStatus?: EpisodeWatchedStatus
+): Episode => ({
   id: episode.id,
   airDate: episode.air_date,
   episodeNumber: episode.episode_number,
@@ -126,9 +137,13 @@ const mapEpisodeResult = (episode: TmdbTvEpisodeResult): Episode => ({
   voteAverage: episode.vote_average,
   voteCount: episode.vote_count,
   stillPath: episode.still_path,
+  userWatchStatus,
 });
 
-const mapSeasonResult = (season: TmdbTvSeasonResult): Season => ({
+const mapSeasonResult = (
+  season: TmdbTvSeasonResult,
+  userWatchStatus?: SeasonWatchedStatus
+): Season => ({
   airDate: season.air_date,
   episodeCount: season.episode_count,
   id: season.id,
@@ -136,19 +151,30 @@ const mapSeasonResult = (season: TmdbTvSeasonResult): Season => ({
   overview: season.overview,
   seasonNumber: season.season_number,
   posterPath: season.poster_path,
+  userWatchStatus,
 });
 
 export const mapSeasonWithEpisodes = (
-  season: TmdbSeasonWithEpisodes
+  season: TmdbSeasonWithEpisodes,
+  userWatchStatus?: SeasonWatchedStatus,
+  episodeWatchStatuses?: Map<string, EpisodeWatchedStatus>
 ): SeasonWithEpisodes => ({
   airDate: season.air_date,
-  episodes: season.episodes.map(mapEpisodeResult),
+  episodes: season.episodes.map((episode) =>
+    mapEpisodeResult(
+      episode,
+      episodeWatchStatuses?.get(
+        `${episode.season_number}:${episode.episode_number}`
+      )
+    )
+  ),
   externalIds: mapExternalIds(season.external_ids),
   id: season.id,
   name: season.name,
   overview: season.overview,
   seasonNumber: season.season_number,
   posterPath: season.poster_path,
+  userWatchStatus,
 });
 
 export const mapNetwork = (network: TmdbNetwork): TvNetwork => ({
@@ -163,7 +189,9 @@ export const mapNetwork = (network: TmdbNetwork): TvNetwork => ({
 export const mapTvDetails = (
   show: TmdbTvDetails,
   media?: Media,
-  userWatchlist?: boolean
+  userWatchlist?: boolean,
+  userWatchStatus?: ShowWatchedStatus,
+  seasonWatchStatuses?: Map<number, SeasonWatchedStatus>
 ): TvDetails => ({
   createdBy: show.created_by,
   episodeRunTime: show.episode_run_time,
@@ -201,7 +229,9 @@ export const mapTvDetails = (
     iso_639_1: language.iso_639_1,
     name: language.name,
   })),
-  seasons: show.seasons.map(mapSeasonResult),
+  seasons: show.seasons.map((season) =>
+    mapSeasonResult(season, seasonWatchStatuses?.get(season.season_number))
+  ),
   status: show.status,
   type: show.type,
   voteAverage: show.vote_average,
@@ -226,4 +256,5 @@ export const mapTvDetails = (
   mediaInfo: media,
   watchProviders: mapWatchProviders(show['watch/providers']?.results ?? {}),
   onUserWatchlist: userWatchlist,
+  userWatchStatus,
 });

@@ -1,6 +1,7 @@
 import type { NotificationAgentTypes } from '@server/interfaces/api/userSettingsInterfaces';
 import { hasNotificationType, Notification } from '@server/lib/notifications';
 import { NotificationAgentKey } from '@server/lib/settings';
+import { DbAwareColumn } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
@@ -74,6 +75,18 @@ export class UserSettings {
 
   @Column({ default: false })
   public hideWatched?: boolean;
+
+  @Column({ default: false })
+  public traktHistorySyncEnabled?: boolean;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public traktHistoryLastSyncAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public traktHistoryLastSyncAttemptAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public traktHistoryLatestWatchedAt?: Date | null;
 
   @Column({
     type: 'text',

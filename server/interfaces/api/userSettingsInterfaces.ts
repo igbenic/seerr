@@ -19,6 +19,7 @@ export interface UserSettingsGeneralResponse {
   watchlistSyncMovies?: boolean;
   watchlistSyncTv?: boolean;
   hideWatched?: boolean;
+  traktHistorySyncEnabled?: boolean;
 }
 
 export type NotificationAgentTypes = Record<NotificationAgentKey, number>;

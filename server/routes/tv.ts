@@ -7,25 +7,49 @@ import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
+import {
+  markEpisodeUnwatched,
+  markEpisodeWatched,
+  markSeasonUnwatched,
+  markSeasonWatched,
+  markShowUnwatched,
+  markShowWatched,
+} from '@server/lib/traktWatchActions';
+import {
+  getEpisodeWatchStatuses,
+  getSeasonWatchStatus,
+  getShowSeasonData,
+  getShowWatchStatus,
+} from '@server/lib/traktWatchState';
 import logger from '@server/logger';
+import { isAuthenticated } from '@server/middleware/auth';
 import { mapTvResult } from '@server/models/Search';
 import { mapSeasonWithEpisodes, mapTvDetails } from '@server/models/Tv';
+import type { SeasonWatchedStatus } from '@server/interfaces/api/traktWatchInterfaces';
 import { Router } from 'express';
 
 const tvRoutes = Router();
+
+const getMetadataProviderForShow = async (tvId: number) => {
+  const tmdb = new TheMovieDb();
+  const tmdbTv = await tmdb.getTvShow({
+    tvId,
+  });
+
+  return tmdbTv.keywords.results.some(
+    (keyword: TmdbKeyword) => keyword.id === ANIME_KEYWORD_ID
+  )
+    ? getMetadataProvider('anime')
+    : getMetadataProvider('tv');
+};
 
 tvRoutes.get('/:id', async (req, res, next) => {
   const tmdb = new TheMovieDb();
 
   try {
-    const tmdbTv = await tmdb.getTvShow({
-      tvId: Number(req.params.id),
-    });
-    const metadataProvider = tmdbTv.keywords.results.some(
-      (keyword: TmdbKeyword) => keyword.id === ANIME_KEYWORD_ID
-    )
-      ? await getMetadataProvider('anime')
-      : await getMetadataProvider('tv');
+    const metadataProvider = await getMetadataProviderForShow(
+      Number(req.params.id)
+    );
     const tv = await metadataProvider.getTvShow({
       tvId: Number(req.params.id),
       language: (req.query.language as string) ?? req.locale,
@@ -42,7 +66,45 @@ tvRoutes.get('/:id', async (req, res, next) => {
       },
     });
 
-    const data = mapTvDetails(tv, media, onUserWatchlist);
+    const seasons = req.user ? await getShowSeasonData(tv.id, req.locale) : [];
+    const eligibleEpisodes = seasons.flatMap((season) =>
+      season.episodes.map((episode) => ({
+        airDate: episode.airDate,
+        episodeNumber: episode.episodeNumber,
+        name: episode.name,
+        seasonNumber: episode.seasonNumber,
+      }))
+    );
+    const userWatchStatus = req.user
+      ? await getShowWatchStatus(req.user.id, tv.id, eligibleEpisodes)
+      : undefined;
+    const seasonWatchStatuses = new Map<number, SeasonWatchedStatus>(
+      await Promise.all(
+        seasons.map(
+          async (season): Promise<[number, SeasonWatchedStatus]> => [
+            season.seasonNumber,
+            await getSeasonWatchStatus(
+              req.user!.id,
+              tv.id,
+              season.episodes.map((episode) => ({
+                airDate: episode.airDate,
+                episodeNumber: episode.episodeNumber,
+                name: episode.name,
+                seasonNumber: episode.seasonNumber,
+              })),
+              season.seasonNumber
+            ),
+          ]
+        )
+      )
+    );
+    const data = mapTvDetails(
+      tv,
+      media,
+      onUserWatchlist,
+      userWatchStatus,
+      req.user ? seasonWatchStatuses : undefined
+    );
 
     // TMDB issue where it doesnt fallback to English when no overview is available in requested locale.
     if (!data.overview) {
@@ -68,23 +130,42 @@ tvRoutes.get('/:id', async (req, res, next) => {
 
 tvRoutes.get('/:id/season/:seasonNumber', async (req, res, next) => {
   try {
-    const tmdb = new TheMovieDb();
-    const tmdbTv = await tmdb.getTvShow({
-      tvId: Number(req.params.id),
-    });
-    const metadataProvider = tmdbTv.keywords.results.some(
-      (keyword: TmdbKeyword) => keyword.id === ANIME_KEYWORD_ID
-    )
-      ? await getMetadataProvider('anime')
-      : await getMetadataProvider('tv');
+    const metadataProvider = await getMetadataProviderForShow(
+      Number(req.params.id)
+    );
 
     const season = await metadataProvider.getTvSeason({
       tvId: Number(req.params.id),
       seasonNumber: Number(req.params.seasonNumber),
       language: (req.query.language as string) ?? req.locale,
     });
+    const eligibleEpisodes = season.episodes.map((episode) => ({
+      airDate: episode.air_date,
+      episodeNumber: episode.episode_number,
+      name: episode.name,
+      seasonNumber: episode.season_number,
+    }));
+    const episodeWatchStatuses = req.user
+      ? await getEpisodeWatchStatuses(
+          req.user.id,
+          Number(req.params.id),
+          eligibleEpisodes
+        )
+      : undefined;
+    const seasonWatchStatus = req.user
+      ? await getSeasonWatchStatus(
+          req.user.id,
+          Number(req.params.id),
+          eligibleEpisodes,
+          Number(req.params.seasonNumber)
+        )
+      : undefined;
 
-    return res.status(200).json(mapSeasonWithEpisodes(season));
+    return res
+      .status(200)
+      .json(
+        mapSeasonWithEpisodes(season, seasonWatchStatus, episodeWatchStatuses)
+      );
   } catch (e) {
     logger.debug('Something went wrong retrieving season', {
       label: 'API',
@@ -98,6 +179,265 @@ tvRoutes.get('/:id/season/:seasonNumber', async (req, res, next) => {
     });
   }
 });
+
+tvRoutes.post('/:id/watch', isAuthenticated(), async (req, res, next) => {
+  const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+
+  try {
+    if (!req.user) {
+      return next({
+        status: 401,
+        message: 'You must be logged in to mark media watched.',
+      });
+    }
+
+    const show = await metadataProvider.getTvShow({
+      tvId: Number(req.params.id),
+    });
+    const response = await markShowWatched({
+      ids: {
+        imdb: show.external_ids?.imdb_id,
+        tvdb: show.external_ids?.tvdb_id,
+      },
+      title: show.name,
+      tmdbId: show.id,
+      userId: req.user.id,
+      year: show.first_air_date ? Number(show.first_air_date.slice(0, 4)) : null,
+    });
+
+    return res.status(200).json(response);
+  } catch (error) {
+    return next({
+      status: 500,
+      message: error instanceof Error ? error.message : 'Unable to mark watched.',
+    });
+  }
+});
+
+tvRoutes.delete('/:id/watch', isAuthenticated(), async (req, res, next) => {
+  const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+
+  try {
+    if (!req.user) {
+      return next({
+        status: 401,
+        message: 'You must be logged in to mark media unwatched.',
+      });
+    }
+
+    const show = await metadataProvider.getTvShow({
+      tvId: Number(req.params.id),
+    });
+    const response = await markShowUnwatched({
+      ids: {
+        imdb: show.external_ids?.imdb_id,
+        tvdb: show.external_ids?.tvdb_id,
+      },
+      tmdbId: show.id,
+      userId: req.user.id,
+    });
+
+    return res.status(200).json(response);
+  } catch (error) {
+    return next({
+      status: 500,
+      message:
+        error instanceof Error ? error.message : 'Unable to mark unwatched.',
+    });
+  }
+});
+
+tvRoutes.post(
+  '/:id/season/:seasonNumber/watch',
+  isAuthenticated(),
+  async (req, res, next) => {
+    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+
+    try {
+      if (!req.user) {
+        return next({
+          status: 401,
+          message: 'You must be logged in to mark media watched.',
+        });
+      }
+
+      const show = await metadataProvider.getTvShow({
+        tvId: Number(req.params.id),
+      });
+      const response = await markSeasonWatched({
+        ids: {
+          imdb: show.external_ids?.imdb_id,
+          tvdb: show.external_ids?.tvdb_id,
+        },
+        seasonNumber: Number(req.params.seasonNumber),
+        title: show.name,
+        tmdbId: show.id,
+        userId: req.user.id,
+        year: show.first_air_date
+          ? Number(show.first_air_date.slice(0, 4))
+          : null,
+      });
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error ? error.message : 'Unable to mark watched.',
+      });
+    }
+  }
+);
+
+tvRoutes.delete(
+  '/:id/season/:seasonNumber/watch',
+  isAuthenticated(),
+  async (req, res, next) => {
+    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+
+    try {
+      if (!req.user) {
+        return next({
+          status: 401,
+          message: 'You must be logged in to mark media unwatched.',
+        });
+      }
+
+      const show = await metadataProvider.getTvShow({
+        tvId: Number(req.params.id),
+      });
+      const response = await markSeasonUnwatched({
+        ids: {
+          imdb: show.external_ids?.imdb_id,
+          tvdb: show.external_ids?.tvdb_id,
+        },
+        seasonNumber: Number(req.params.seasonNumber),
+        tmdbId: show.id,
+        userId: req.user.id,
+      });
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error ? error.message : 'Unable to mark unwatched.',
+      });
+    }
+  }
+);
+
+tvRoutes.post(
+  '/:id/season/:seasonNumber/episode/:episodeNumber/watch',
+  isAuthenticated(),
+  async (req, res, next) => {
+    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+
+    try {
+      if (!req.user) {
+        return next({
+          status: 401,
+          message: 'You must be logged in to mark media watched.',
+        });
+      }
+
+      const [show, season] = await Promise.all([
+        metadataProvider.getTvShow({
+          tvId: Number(req.params.id),
+        }),
+        metadataProvider.getTvSeason({
+          tvId: Number(req.params.id),
+          seasonNumber: Number(req.params.seasonNumber),
+        }),
+      ]);
+      const episode = season.episodes.find(
+        (item) => item.episode_number === Number(req.params.episodeNumber)
+      );
+
+      if (!episode) {
+        return next({ status: 404, message: 'Episode not found.' });
+      }
+
+      const response = await markEpisodeWatched({
+        airDate: episode.air_date,
+        episodeNumber: episode.episode_number,
+        ids: {
+          imdb: show.external_ids?.imdb_id,
+          tvdb: show.external_ids?.tvdb_id,
+        },
+        seasonNumber: episode.season_number,
+        title: show.name,
+        tmdbId: show.id,
+        userId: req.user.id,
+        year: show.first_air_date
+          ? Number(show.first_air_date.slice(0, 4))
+          : null,
+      });
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error ? error.message : 'Unable to mark watched.',
+      });
+    }
+  }
+);
+
+tvRoutes.delete(
+  '/:id/season/:seasonNumber/episode/:episodeNumber/watch',
+  isAuthenticated(),
+  async (req, res, next) => {
+    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+
+    try {
+      if (!req.user) {
+        return next({
+          status: 401,
+          message: 'You must be logged in to mark media unwatched.',
+        });
+      }
+
+      const [show, season] = await Promise.all([
+        metadataProvider.getTvShow({
+          tvId: Number(req.params.id),
+        }),
+        metadataProvider.getTvSeason({
+          tvId: Number(req.params.id),
+          seasonNumber: Number(req.params.seasonNumber),
+        }),
+      ]);
+      const episode = season.episodes.find(
+        (item) => item.episode_number === Number(req.params.episodeNumber)
+      );
+
+      if (!episode) {
+        return next({ status: 404, message: 'Episode not found.' });
+      }
+
+      const response = await markEpisodeUnwatched({
+        airDate: episode.air_date,
+        episodeNumber: episode.episode_number,
+        ids: {
+          imdb: show.external_ids?.imdb_id,
+          tvdb: show.external_ids?.tvdb_id,
+        },
+        seasonNumber: episode.season_number,
+        tmdbId: show.id,
+        userId: req.user.id,
+      });
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error ? error.message : 'Unable to mark unwatched.',
+      });
+    }
+  }
+);
 
 tvRoutes.get('/:id/recommendations', async (req, res, next) => {
   const tmdb = new TheMovieDb();

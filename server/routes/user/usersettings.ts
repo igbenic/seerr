@@ -23,6 +23,10 @@ import {
 } from '@server/lib/imdb';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import {
+  getTraktHistoryStatus,
+  syncTraktHistoryForUser,
+} from '@server/lib/traktHistory';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { ApiError } from '@server/types/error';
@@ -75,6 +79,7 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         watchlistSyncMovies: user.settings?.watchlistSyncMovies,
         watchlistSyncTv: user.settings?.watchlistSyncTv,
         hideWatched: user.settings?.hideWatched,
+        traktHistorySyncEnabled: user.settings?.traktHistorySyncEnabled,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -142,6 +147,7 @@ userSettingsRoutes.post<
         watchlistSyncMovies: req.body.watchlistSyncMovies,
         watchlistSyncTv: req.body.watchlistSyncTv,
         hideWatched: req.body.hideWatched,
+        traktHistorySyncEnabled: req.body.traktHistorySyncEnabled,
       });
     } else {
       user.settings.discordId = req.body.discordId;
@@ -152,6 +158,7 @@ userSettingsRoutes.post<
       user.settings.watchlistSyncMovies = req.body.watchlistSyncMovies;
       user.settings.watchlistSyncTv = req.body.watchlistSyncTv;
       user.settings.hideWatched = req.body.hideWatched;
+      user.settings.traktHistorySyncEnabled = req.body.traktHistorySyncEnabled;
     }
 
     const savedUser = await userRepository.save(user);
@@ -166,6 +173,7 @@ userSettingsRoutes.post<
       watchlistSyncMovies: savedUser.settings?.watchlistSyncMovies,
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
       hideWatched: savedUser.settings?.hideWatched,
+      traktHistorySyncEnabled: savedUser.settings?.traktHistorySyncEnabled,
       email: savedUser.email,
     });
   } catch (e) {
@@ -198,6 +206,34 @@ userSettingsRoutes.get<{ id: string }, { hasPassword: boolean }>(
       return res.status(200).json({ hasPassword: !!user.password });
     } catch (e) {
       next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.get<{ id: string }>(
+  '/trakt-history',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      return res
+        .status(200)
+        .json(await getTraktHistoryStatus(Number(req.params.id)));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/trakt-history/sync',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      return res
+        .status(200)
+        .json(await syncTraktHistoryForUser(Number(req.params.id)));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
     }
   }
 );

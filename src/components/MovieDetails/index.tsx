@@ -33,6 +33,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
 import {
   ArrowRightCircleIcon,
+  CheckCircleIcon,
   CloudIcon,
   CogIcon,
   ExclamationTriangleIcon,
@@ -106,6 +107,11 @@ const messages = defineMessages('components.MovieDetails', {
   watchlistError: 'Something went wrong. Please try again.',
   removefromwatchlist: 'Remove From Watchlist',
   addtowatchlist: 'Add To Watchlist',
+  markWatched: 'Mark Watched',
+  markUnwatched: 'Mark Unwatched',
+  watchedSuccess: '<strong>{title}</strong> marked watched.',
+  unwatchedSuccess: '<strong>{title}</strong> marked unwatched.',
+  watchedError: 'Unable to update watched status.',
 });
 
 interface MovieDetailsProps {
@@ -129,6 +135,8 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     !movie?.onUserWatchlist
   );
   const [isBlocklistUpdating, setIsBlocklistUpdating] =
+    useState<boolean>(false);
+  const [isWatchStatusUpdating, setIsWatchStatusUpdating] =
     useState<boolean>(false);
   const [showBlocklistModal, setShowBlocklistModal] = useState(false);
   const { addToast } = useToasts();
@@ -427,6 +435,49 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     closeBlocklistModal();
   };
 
+  const onClickWatchStatusBtn = async (): Promise<void> => {
+    if (!data) {
+      return;
+    }
+
+    setIsWatchStatusUpdating(true);
+
+    try {
+      if (data.userWatchStatus?.watched) {
+        await axios.delete(`/api/v1/movie/${data.id}/watch`);
+        addToast(
+          <span>
+            {intl.formatMessage(messages.unwatchedSuccess, {
+              title: data.title,
+              strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
+            })}
+          </span>,
+          { appearance: 'info', autoDismiss: true }
+        );
+      } else {
+        await axios.post(`/api/v1/movie/${data.id}/watch`);
+        addToast(
+          <span>
+            {intl.formatMessage(messages.watchedSuccess, {
+              title: data.title,
+              strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
+            })}
+          </span>,
+          { appearance: 'success', autoDismiss: true }
+        );
+      }
+
+      await revalidate();
+    } catch {
+      addToast(intl.formatMessage(messages.watchedError), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      setIsWatchStatusUpdating(false);
+    }
+  };
+
   const showHideButton = hasPermission([Permission.MANAGE_BLOCKLIST], {
     type: 'or',
   });
@@ -584,6 +635,34 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
           {data?.mediaInfo?.status !== MediaStatus.BLOCKLISTED &&
             user?.userType !== UserType.PLEX && (
               <>
+                {user?.traktUsername && (
+                  <Tooltip
+                    content={intl.formatMessage(
+                      data.userWatchStatus?.watched
+                        ? messages.markUnwatched
+                        : messages.markWatched
+                    )}
+                  >
+                    <Button
+                      buttonType={data.userWatchStatus?.watched ? 'primary' : 'ghost'}
+                      className="z-40 mr-2"
+                      buttonSize={'md'}
+                      onClick={onClickWatchStatusBtn}
+                    >
+                      {isWatchStatusUpdating ? (
+                        <Spinner />
+                      ) : (
+                        <CheckCircleIcon
+                          className={
+                            data.userWatchStatus?.watched
+                              ? 'text-green-400'
+                              : undefined
+                          }
+                        />
+                      )}
+                    </Button>
+                  </Tooltip>
+                )}
                 {toggleWatchlist ? (
                   <Tooltip
                     content={intl.formatMessage(messages.addtowatchlist)}

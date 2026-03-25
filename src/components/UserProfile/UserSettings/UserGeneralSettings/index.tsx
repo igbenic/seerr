@@ -12,8 +12,14 @@ import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowDownOnSquareIcon,
+  ArrowPathIcon,
+} from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
+import type {
+  TraktHistoryStatusResponse,
+} from '@server/interfaces/api/userInterfaces';
 import type { UserSettingsGeneralResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';
 import axios from 'axios';
@@ -76,6 +82,17 @@ const messages = defineMessages(
     hideWatched: 'Hide Watched Trakt Titles',
     hideWatchedTip:
       'Hide titles you have already watched on Trakt from Trakt-powered recommendations and watchlists.',
+    traktHistorySync: 'Sync Trakt Watch History',
+    traktHistorySyncTip:
+      'Import your full Trakt watch history into Seerr and keep it updated in the background.',
+    traktHistorySyncNow: 'Sync Now',
+    traktHistoryImported: '{count} imported',
+    traktHistoryStatusConnected: 'Linked Trakt account required for sync.',
+    traktHistoryStatusLastSuccess: 'Last successful sync',
+    traktHistoryStatusLastAttempt: 'Last attempted sync',
+    traktHistoryStatusLatest: 'Latest imported watch',
+    traktHistorySyncSuccess: 'Trakt history sync completed.',
+    traktHistorySyncFailure: 'Unable to sync Trakt history.',
   }
 );
 
@@ -101,6 +118,12 @@ const UserGeneralSettings = () => {
     mutate: revalidate,
   } = useSWR<UserSettingsGeneralResponse>(
     user ? `/api/v1/user/${user?.id}/settings/main` : null
+  );
+  const {
+    data: traktHistoryStatus,
+    mutate: revalidateTraktHistoryStatus,
+  } = useSWR<TraktHistoryStatusResponse>(
+    user ? `/api/v1/user/${user?.id}/settings/trakt-history` : null
   );
 
   const UserGeneralSettingsSchema = Yup.object().shape({
@@ -173,6 +196,7 @@ const UserGeneralSettings = () => {
           watchlistSyncMovies: data?.watchlistSyncMovies,
           watchlistSyncTv: data?.watchlistSyncTv,
           hideWatched: data?.hideWatched,
+          traktHistorySyncEnabled: data?.traktHistorySyncEnabled,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -196,6 +220,7 @@ const UserGeneralSettings = () => {
               watchlistSyncMovies: values.watchlistSyncMovies,
               watchlistSyncTv: values.watchlistSyncTv,
               hideWatched: values.hideWatched,
+              traktHistorySyncEnabled: values.traktHistorySyncEnabled,
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -238,6 +263,7 @@ const UserGeneralSettings = () => {
           } finally {
             revalidate();
             revalidateUser();
+            revalidateTraktHistoryStatus();
           }
         }}
       >
@@ -641,24 +667,167 @@ const UserGeneralSettings = () => {
                   </div>
                 )}
               {(currentSettings.traktEnabled || !!user?.traktUsername) && (
-                <div className="form-row">
-                  <label htmlFor="hideWatched" className="checkbox-label">
-                    <span>{intl.formatMessage(messages.hideWatched)}</span>
-                    <span className="label-tip">
-                      {intl.formatMessage(messages.hideWatchedTip)}
-                    </span>
-                  </label>
-                  <div className="form-input-area">
-                    <Field
-                      type="checkbox"
-                      id="hideWatched"
-                      name="hideWatched"
-                      onChange={() => {
-                        setFieldValue('hideWatched', !values.hideWatched);
-                      }}
-                    />
+                <>
+                  <div className="form-row">
+                    <label htmlFor="hideWatched" className="checkbox-label">
+                      <span>{intl.formatMessage(messages.hideWatched)}</span>
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.hideWatchedTip)}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
+                      <Field
+                        type="checkbox"
+                        id="hideWatched"
+                        name="hideWatched"
+                        onChange={() => {
+                          setFieldValue('hideWatched', !values.hideWatched);
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
+                  <div className="form-row">
+                    <label
+                      htmlFor="traktHistorySyncEnabled"
+                      className="checkbox-label"
+                    >
+                      <span>{intl.formatMessage(messages.traktHistorySync)}</span>
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.traktHistorySyncTip)}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
+                      <Field
+                        type="checkbox"
+                        id="traktHistorySyncEnabled"
+                        name="traktHistorySyncEnabled"
+                        onChange={() => {
+                          setFieldValue(
+                            'traktHistorySyncEnabled',
+                            !values.traktHistorySyncEnabled
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="text-label" />
+                    <div className="form-input-area">
+                      <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
+                        <div className="text-sm text-gray-200">
+                          {intl.formatMessage(messages.traktHistoryImported, {
+                            count: traktHistoryStatus?.totalItems ?? 0,
+                          })}
+                        </div>
+                        <div className="mt-2 text-sm text-gray-400">
+                          {traktHistoryStatus?.traktConnected
+                            ? intl.formatMessage(
+                                messages.traktHistoryStatusLastSuccess
+                              ) +
+                              ': ' +
+                              (traktHistoryStatus?.lastSuccessfulSyncAt
+                                ? `${intl.formatDate(
+                                    traktHistoryStatus.lastSuccessfulSyncAt,
+                                    {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    }
+                                  )} ${intl.formatTime(
+                                    traktHistoryStatus.lastSuccessfulSyncAt,
+                                    {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    }
+                                  )}`
+                                : '—')
+                            : intl.formatMessage(
+                                messages.traktHistoryStatusConnected
+                              )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(messages.traktHistoryStatusLastAttempt)}
+                          :{' '}
+                          {traktHistoryStatus?.lastAttemptedSyncAt
+                            ? `${intl.formatDate(
+                                traktHistoryStatus.lastAttemptedSyncAt,
+                                {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                }
+                              )} ${intl.formatTime(
+                                traktHistoryStatus.lastAttemptedSyncAt,
+                                {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                }
+                              )}`
+                            : '—'}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(messages.traktHistoryStatusLatest)}
+                          :{' '}
+                          {traktHistoryStatus?.latestImportedWatchedAt
+                            ? `${intl.formatDate(
+                                traktHistoryStatus.latestImportedWatchedAt,
+                                {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                }
+                              )} ${intl.formatTime(
+                                traktHistoryStatus.latestImportedWatchedAt,
+                                {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                }
+                              )}`
+                            : '—'}
+                        </div>
+                        <div className="mt-4">
+                          <Button
+                            buttonType="ghost"
+                            type="button"
+                            disabled={!traktHistoryStatus?.traktConnected}
+                            onClick={async () => {
+                              try {
+                                await axios.post(
+                                  `/api/v1/user/${user?.id}/settings/trakt-history/sync`
+                                );
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.traktHistorySyncSuccess
+                                  ),
+                                  {
+                                    appearance: 'success',
+                                    autoDismiss: true,
+                                  }
+                                );
+                                revalidateTraktHistoryStatus();
+                              } catch (e) {
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.traktHistorySyncFailure
+                                  ),
+                                  {
+                                    appearance: 'error',
+                                    autoDismiss: true,
+                                  }
+                                );
+                              }
+                            }}
+                          >
+                            <ArrowPathIcon className="mr-2 h-5 w-5" />
+                            <span>
+                              {intl.formatMessage(messages.traktHistorySyncNow)}
+                            </span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
               <div className="actions">
                 <div className="flex justify-end">
