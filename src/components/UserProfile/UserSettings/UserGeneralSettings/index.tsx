@@ -147,7 +147,11 @@ const UserGeneralSettings = () => {
           ),
     discordId: Yup.string()
       .nullable()
-      .matches(/^\d{17,19}$/, intl.formatMessage(messages.validationDiscordId)),
+      .test(
+        'discord-id',
+        intl.formatMessage(messages.validationDiscordId),
+        (value) => !value || /^\d{17,19}$/.test(value)
+      ),
   });
 
   useEffect(() => {
@@ -792,19 +796,24 @@ const UserGeneralSettings = () => {
                             disabled={!traktHistoryStatus?.traktConnected}
                             onClick={async () => {
                               try {
-                                await axios.post(
+                                const response = await axios.post<TraktHistoryStatusResponse>(
                                   `/api/v1/user/${user?.id}/settings/trakt-history/sync`
                                 );
                                 addToast(
-                                  intl.formatMessage(
+                                  `${intl.formatMessage(
                                     messages.traktHistorySyncSuccess
-                                  ),
+                                  )} ${intl.formatMessage(
+                                    messages.traktHistoryImported,
+                                    {
+                                      count: response.data.totalItems ?? 0,
+                                    }
+                                  )}`,
                                   {
                                     appearance: 'success',
                                     autoDismiss: true,
                                   }
                                 );
-                                revalidateTraktHistoryStatus();
+                                revalidateTraktHistoryStatus(response.data, false);
                               } catch (e) {
                                 addToast(
                                   intl.formatMessage(
