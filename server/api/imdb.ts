@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type Page, type Response } from 'playwright-core';
 
 export type ImdbCredentials =
   | {
@@ -176,8 +176,9 @@ class ImdbApi {
   }
 
   private async goto(page: Page, url: string): Promise<void> {
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
     await this.handleAwsWafChallenge(page);
+    this.assertPageAccessible(page, response);
   }
 
   private async handleAwsWafChallenge(page: Page): Promise<void> {
@@ -191,6 +192,19 @@ class ImdbApi {
 
     if (await isVisible(page, "script[src*='token.awswaf.com']")) {
       throw new Error('IMDb AWS WAF challenge did not complete in time.');
+    }
+  }
+
+  private assertPageAccessible(
+    page: Page,
+    response: Response | null
+  ): void {
+    const status = response?.status();
+
+    if (status === 202 || status === 403 || page.url().includes('/errors/403')) {
+      throw new ImdbAuthenticationError(
+        'IMDb blocked this request with an anti-bot challenge from the current server. Linking IMDb is not available from this environment right now.'
+      );
     }
   }
 
@@ -248,7 +262,7 @@ const extractWatchlistId = (href: string | null): string | null => {
   return match?.[1] ?? null;
 };
 
-const parseWatchlistCsv = (csv: string): ImdbWatchlistItem[] => {
+export const parseWatchlistCsv = (csv: string): ImdbWatchlistItem[] => {
   const rows = parseCsv(csv);
 
   if (!rows.length) {

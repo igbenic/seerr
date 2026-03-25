@@ -1,5 +1,4 @@
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
-import ImdbLogo from '@app/assets/services/imdb.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
@@ -21,7 +20,6 @@ import { useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 import ImdbImportModal from './ImdbImportModal';
-import LinkImdbModal from './LinkImdbModal';
 import LinkJellyfinModal from './LinkJellyfinModal';
 
 const messages = defineMessages(
@@ -44,8 +42,7 @@ const messages = defineMessages(
     traktInvalidState:
       'The Trakt sign-in callback could not be validated. Please try again.',
     traktError: 'Unable to complete the Trakt connection.',
-    imdbCookieLinked: 'IMDb Cookie Session',
-    imdbImport: 'Import to Trakt',
+    imdbImport: 'Import IMDb CSV',
   }
 );
 
@@ -56,7 +53,6 @@ enum LinkedAccountType {
   Jellyfin = 'Jellyfin',
   Emby = 'Emby',
   Trakt = 'Trakt',
-  Imdb = 'IMDb',
 }
 
 type LinkedAccount = {
@@ -78,7 +74,6 @@ const UserLinkedAccountsSettings = () => {
     user ? `/api/v1/user/${user?.id}/settings/password` : null
   );
   const [showImdbImportModal, setShowImdbImportModal] = useState(false);
-  const [showImdbModal, setShowImdbModal] = useState(false);
   const [showJellyfinModal, setShowJellyfinModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,15 +105,8 @@ const UserLinkedAccountsSettings = () => {
         username: user.traktUsername,
       });
     }
-    if (user.imdbConnectedAt) {
-      accounts.push({
-        type: LinkedAccountType.Imdb,
-        username:
-          user.imdbEmail || intl.formatMessage(messages.imdbCookieLinked),
-      });
-    }
     return accounts;
-  }, [intl, user]);
+  }, [user]);
 
   const traktAlert = useMemo(() => {
     switch (traktResult) {
@@ -204,11 +192,6 @@ const UserLinkedAccountsSettings = () => {
         accounts.some((a) => a.type === LinkedAccountType.Emby),
     },
     {
-      name: 'IMDb',
-      action: () => setShowImdbModal(true),
-      hide: accounts.some((a) => a.type === LinkedAccountType.Imdb),
-    },
-    {
       name: 'Trakt',
       action: () => {
         window.location.assign(
@@ -227,10 +210,6 @@ const UserLinkedAccountsSettings = () => {
     try {
       if (account === 'trakt') {
         await axios.delete('/api/v1/auth/trakt/disconnect');
-      } else if (account === 'imdb') {
-        await axios.delete(
-          `/api/v1/user/${user?.id}/settings/linked-accounts/imdb`
-        );
       } else {
         await axios.delete(
           `/api/v1/user/${user?.id}/settings/linked-accounts/${account}`
@@ -265,7 +244,6 @@ const UserLinkedAccountsSettings = () => {
 
   const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
   const enableTraktUnlink = currentUser?.id === user?.id;
-  const enableImdbUnlink = currentUser?.id === user?.id;
 
   return (
     <>
@@ -287,15 +265,27 @@ const UserLinkedAccountsSettings = () => {
             })}
           </h6>
         </div>
-        {currentUser?.id === user?.id && !!linkable.length && (
-          <div>
-            <Dropdown text="Link Account" buttonType="ghost">
-              {linkable.map(({ name, action }) => (
-                <Dropdown.Item key={name} onClick={action}>
-                  {name}
-                </Dropdown.Item>
-              ))}
-            </Dropdown>
+        {currentUser?.id === user?.id &&
+          (!!user?.traktUsername || !!linkable.length) && (
+          <div className="flex gap-2">
+            {!!user?.traktUsername && (
+              <Button
+                buttonType="ghost"
+                buttonSize="sm"
+                onClick={() => setShowImdbImportModal(true)}
+              >
+                {intl.formatMessage(messages.imdbImport)}
+              </Button>
+            )}
+            {!!linkable.length && (
+              <Dropdown text="Link Account" buttonType="ghost">
+                {linkable.map(({ name, action }) => (
+                  <Dropdown.Item key={name} onClick={action}>
+                    {name}
+                  </Dropdown.Item>
+                ))}
+              </Dropdown>
+            )}
           </div>
         )}
       </div>
@@ -317,8 +307,6 @@ const UserLinkedAccountsSettings = () => {
                   <EmbyLogo />
                 ) : acct.type === LinkedAccountType.Trakt ? (
                   <TraktLogo />
-                ) : acct.type === LinkedAccountType.Imdb ? (
-                  <ImdbLogo />
                 ) : (
                   <JellyfinLogo />
                 )}
@@ -332,21 +320,8 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {acct.type === LinkedAccountType.Imdb &&
-                currentUser?.id === user?.id &&
-                !!user?.traktUsername && (
-                  <Button
-                    buttonType="ghost"
-                    buttonSize="sm"
-                    onClick={() => setShowImdbImportModal(true)}
-                  >
-                    {intl.formatMessage(messages.imdbImport)}
-                  </Button>
-                )}
               {((acct.type === LinkedAccountType.Trakt && enableTraktUnlink) ||
-                (acct.type === LinkedAccountType.Imdb && enableImdbUnlink) ||
                 (acct.type !== LinkedAccountType.Trakt &&
-                  acct.type !== LinkedAccountType.Imdb &&
                   enableMediaServerUnlink)) && (
                 <ConfirmButton
                   onClick={() => {
@@ -355,9 +330,7 @@ const UserLinkedAccountsSettings = () => {
                         ? 'plex'
                         : acct.type === LinkedAccountType.Trakt
                           ? 'trakt'
-                          : acct.type === LinkedAccountType.Imdb
-                            ? 'imdb'
-                            : 'jellyfin'
+                          : 'jellyfin'
                     );
                   }}
                   confirmText={intl.formatMessage(globalMessages.areyousure)}
@@ -376,15 +349,6 @@ const UserLinkedAccountsSettings = () => {
           </h3>
         </div>
       )}
-
-      <LinkImdbModal
-        show={showImdbModal}
-        onClose={() => setShowImdbModal(false)}
-        onSave={() => {
-          setShowImdbModal(false);
-          revalidateUser();
-        }}
-      />
       <LinkJellyfinModal
         show={showJellyfinModal}
         onClose={() => setShowJellyfinModal(false)}

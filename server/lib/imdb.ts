@@ -1,6 +1,7 @@
 import ImdbApi, {
   type ImdbCredentials,
   type ImdbWatchlistItem,
+  parseWatchlistCsv,
 } from '@server/api/imdb';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -68,15 +69,19 @@ export const linkImdbConnection = async (
   });
 };
 
-export const createImdbImportPreview = async (
-  userId: number
-): Promise<ImdbImportPreviewResponse> => {
+export const createImdbImportPreview = async ({
+  csvContent,
+  userId,
+}: {
+  csvContent?: string;
+  userId: number;
+}): Promise<ImdbImportPreviewResponse> => {
   if (!isTraktConfigured()) {
     throw new Error('Trakt is not configured.');
   }
 
   const [imdbItems, traktApi] = await Promise.all([
-    loadImdbWatchlist(userId),
+    loadImdbWatchlist({ csvContent, userId }),
     createTraktApiForUser(userId),
   ]);
 
@@ -212,12 +217,30 @@ export const confirmImdbImport = async (
   };
 };
 
-const loadImdbWatchlist = async (
-  userId: number
-): Promise<ImdbWatchlistItem[]> => {
+const loadImdbWatchlist = async ({
+  csvContent,
+  userId,
+}: {
+  csvContent?: string;
+  userId: number;
+}): Promise<ImdbWatchlistItem[]> => {
+  if (csvContent !== undefined) {
+    return parseUploadedCsv(csvContent);
+  }
+
   const imdbApi = await createImdbApiForUser(userId);
 
   return imdbApi.getWatchlist();
+};
+
+const parseUploadedCsv = (csvContent: string): ImdbWatchlistItem[] => {
+  const normalizedContent = csvContent.replace(/^\uFEFF/, '').trim();
+
+  if (!normalizedContent) {
+    throw new Error('IMDb CSV upload was empty.');
+  }
+
+  return parseWatchlistCsv(normalizedContent);
 };
 
 const createImdbApiForUser = async (userId: number): Promise<ImdbApi> => {

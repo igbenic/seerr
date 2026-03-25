@@ -107,7 +107,7 @@ describe('IMDb import helpers', () => {
     );
 
     try {
-      const preview = await createImdbImportPreview(1);
+      const preview = await createImdbImportPreview({ userId: 1 });
 
       assert.ok(preview.previewToken);
       assert.deepStrictEqual(preview.summary, {
@@ -204,7 +204,7 @@ describe('IMDb import helpers', () => {
     );
 
     try {
-      const preview = await createImdbImportPreview(1);
+      const preview = await createImdbImportPreview({ userId: 1 });
       const result = await confirmImdbImport(1, preview.previewToken);
 
       assert.deepStrictEqual(result.summary, {

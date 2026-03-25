@@ -621,7 +621,7 @@ userSettingsRoutes.delete<{ id: string }>(
   }
 );
 
-userSettingsRoutes.post<{ id: string }>(
+userSettingsRoutes.post<{ id: string }, unknown, { csvContent?: string }>(
   '/linked-accounts/imdb/import/preview',
   isOwnProfile(),
   async (req, res) => {
@@ -631,7 +631,10 @@ userSettingsRoutes.post<{ id: string }>(
 
     try {
       const preview: ImdbImportPreviewResponse = await createImdbImportPreview(
-        req.user.id
+        {
+          csvContent: req.body?.csvContent,
+          userId: req.user.id,
+        }
       );
 
       return res.status(200).json(preview);

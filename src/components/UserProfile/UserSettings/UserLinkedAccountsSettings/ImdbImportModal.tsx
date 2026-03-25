@@ -8,7 +8,7 @@ import type {
   ImdbImportPreviewResponse,
 } from '@server/interfaces/api/imdbImportInterfaces';
 import axios from 'axios';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages(
@@ -18,7 +18,15 @@ const messages = defineMessages(
     previewTitle: 'IMDb Import Preview',
     resultTitle: 'IMDb Import Result',
     description:
-      'Preview the add-only import from your linked IMDb watchlist into your linked Trakt watchlist.',
+      'Upload an IMDb watchlist CSV export to preview the add-only import into your linked Trakt watchlist.',
+    fileLabel: 'IMDb CSV Export',
+    fileHelp:
+      'Use the CSV file exported from your IMDb watchlist page.',
+    chooseFile: 'Choose CSV File',
+    replaceFile: 'Replace CSV File',
+    noFileSelected: 'Select an IMDb CSV export before generating a preview.',
+    invalidFile:
+      'IMDb import expects a .csv export file from IMDb watchlist export.',
     preview: 'Generate Preview',
     importing: 'Importing…',
     import: 'Import to Trakt',
@@ -61,6 +69,8 @@ const ImdbImportModal: React.FC<ImdbImportModalProps> = ({
     null
   );
   const [result, setResult] = useState<ImdbImportConfirmResponse | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const okText = useMemo(() => {
     if (result) {
@@ -77,13 +87,19 @@ const ImdbImportModal: React.FC<ImdbImportModalProps> = ({
   }, [intl, isLoading, preview, result]);
 
   const okDisabled =
-    isLoading || (!!preview && !result && preview.summary.eligibleToAdd === 0);
+    isLoading ||
+    (!preview && !selectedFile) ||
+    (!!preview && !result && preview.summary.eligibleToAdd === 0);
 
   const resetState = () => {
     setError(null);
     setIsLoading(false);
     setPreview(null);
     setResult(null);
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleOk = async () => {
@@ -99,8 +115,17 @@ const ImdbImportModal: React.FC<ImdbImportModalProps> = ({
 
     try {
       if (!preview) {
+        if (!selectedFile) {
+          setError(intl.formatMessage(messages.noFileSelected));
+          return;
+        }
+
+        const csvContent = await selectedFile.text();
         const response = await axios.post<ImdbImportPreviewResponse>(
-          `/api/v1/user/${userId}/settings/linked-accounts/imdb/import/preview`
+          `/api/v1/user/${userId}/settings/linked-accounts/imdb/import/preview`,
+          {
+            csvContent,
+          }
         );
         setPreview(response.data);
       } else {
@@ -154,7 +179,63 @@ const ImdbImportModal: React.FC<ImdbImportModalProps> = ({
         dialogClass="sm:max-w-2xl"
       >
         {!preview && !result && (
-          <p className="mb-4">{intl.formatMessage(messages.description)}</p>
+          <div className="space-y-4">
+            <p>{intl.formatMessage(messages.description)}</p>
+            <div>
+              <label htmlFor="imdbCsvFile" className="text-label">
+                {intl.formatMessage(messages.fileLabel)}
+              </label>
+              <div className="mt-1 rounded-lg border border-dashed border-gray-600 bg-gray-900/40 p-4">
+                <input
+                  ref={fileInputRef}
+                  id="imdbCsvFile"
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(event) => {
+                    const nextFile = event.target.files?.[0] ?? null;
+
+                    if (
+                      nextFile &&
+                      !nextFile.name.toLowerCase().endsWith('.csv')
+                    ) {
+                      setSelectedFile(null);
+                      setError(intl.formatMessage(messages.invalidFile));
+                      event.target.value = '';
+                      return;
+                    }
+
+                    setError(null);
+                    setSelectedFile(nextFile);
+                  }}
+                />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">
+                      {selectedFile?.name ??
+                        intl.formatMessage(messages.fileHelp)}
+                    </div>
+                    {selectedFile && (
+                      <div className="truncate text-xs text-gray-400">
+                        {Math.max(1, Math.round(selectedFile.size / 1024))} KB
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md border border-gray-500 px-3 py-2 text-sm font-medium text-gray-100 transition hover:border-gray-400 hover:bg-gray-800"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {intl.formatMessage(
+                      selectedFile
+                        ? messages.replaceFile
+                        : messages.chooseFile
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
         {error && (
           <div className="mb-4">
