@@ -255,6 +255,56 @@ describe('Trakt auth routes', () => {
     }
   });
 
+  it('connects a Trakt account when Trakt omits the OAuth state', async () => {
+    const settings = getSettings();
+    settings.trakt.enabled = true;
+    settings.trakt.clientId = 'trakt-client-id';
+    settings.trakt.clientSecret = 'trakt-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    await agent.get('/auth/trakt/connect?redirect=/profile/settings/linked-accounts');
+
+    const exchangeCodeMock = mock.method(
+      TraktAPI,
+      'exchangeCode',
+      async () => ({
+        access_token: 'trakt-access-token',
+        created_at: 1_700_000_000,
+        expires_in: 7200,
+        refresh_token: 'trakt-refresh-token',
+        scope: 'public',
+        token_type: 'bearer',
+      })
+    );
+    const currentUserSettingsMock = mock.method(
+      TraktAPI.prototype,
+      'getCurrentUserSettings',
+      async () => ({
+        user: {
+          username: 'trakt-user',
+          ids: {
+            slug: 'trakt-user',
+            trakt: 1234,
+            uuid: 'trakt-user-uuid',
+          },
+        },
+      })
+    );
+
+    try {
+      const callbackRes = await agent.get('/auth/trakt/callback?code=test-code');
+
+      assert.strictEqual(callbackRes.status, 302);
+      assert.strictEqual(
+        callbackRes.headers.location,
+        '/profile/settings/linked-accounts?trakt=connected'
+      );
+    } finally {
+      exchangeCodeMock.mock.restore();
+      currentUserSettingsMock.mock.restore();
+    }
+  });
+
   it('disconnects a linked Trakt account', async () => {
     const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
     const userRepo = getRepository(User);

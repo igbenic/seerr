@@ -4075,7 +4075,7 @@ paths:
           name: state
           schema:
             type: string
-          required: true
+          required: false
       responses:
         '302':
           description: Redirect to the linked accounts page with connection status

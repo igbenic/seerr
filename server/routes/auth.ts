@@ -180,13 +180,13 @@ authRoutes.get('/trakt/callback', async (req, res) => {
     typeof req.query.state === 'string' ? req.query.state : undefined;
   const host = req.get('host');
 
-  if (!code || !state || !host) {
+  if (!code || !host) {
     clearTraktOauthSession(req);
 
     return redirectTo('error');
   }
 
-  if (state !== req.session.traktOAuthState) {
+  if (state && state !== req.session.traktOAuthState) {
     logger.warn('Rejected Trakt callback due to invalid OAuth state', {
       label: 'Auth',
       userId: req.user.id,
@@ -195,6 +195,14 @@ authRoutes.get('/trakt/callback', async (req, res) => {
     clearTraktOauthSession(req);
 
     return redirectTo('invalid-state');
+  }
+
+  if (!state) {
+    logger.warn('Trakt callback did not include OAuth state', {
+      label: 'Auth',
+      userId: req.user.id,
+      ip: req.ip,
+    });
   }
 
   const traktSettings = getSettings().trakt;
