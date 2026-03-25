@@ -15,7 +15,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store CI=true pnpm install --prod --
 
 FROM base AS build
 
-ARG COMMIT_TAG
+ARG COMMIT_TAG=local
 ENV COMMIT_TAG=${COMMIT_TAG}
 
 RUN \
@@ -35,7 +35,7 @@ RUN rm -rf .next/cache
 
 FROM node:22.22.0-alpine3.22@sha256:7aa86fa052f6e4b101557ccb56717cb4311be1334381f526fe013418fe157384
 ARG SOURCE_DATE_EPOCH
-ARG COMMIT_TAG
+ARG COMMIT_TAG=local
 ENV NODE_ENV=production
 ENV COMMIT_TAG=${COMMIT_TAG}
 

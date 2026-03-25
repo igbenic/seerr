@@ -73,6 +73,9 @@ const messages = defineMessages(
     plexwatchlistsyncseries: 'Auto-Request Series',
     plexwatchlistsyncseriestip:
       'Automatically request series on your <PlexWatchlistSupportLink>Plex Watchlist</PlexWatchlistSupportLink>',
+    hideWatched: 'Hide Watched Trakt Titles',
+    hideWatchedTip:
+      'Hide titles you have already watched on Trakt from Trakt-powered recommendations and watchlists.',
   }
 );
 
@@ -169,6 +172,7 @@ const UserGeneralSettings = () => {
           tvQuotaDays: data?.tvQuotaDays,
           watchlistSyncMovies: data?.watchlistSyncMovies,
           watchlistSyncTv: data?.watchlistSyncTv,
+          hideWatched: data?.hideWatched,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -191,6 +195,7 @@ const UserGeneralSettings = () => {
               tvQuotaDays: tvQuotaEnabled ? values.tvQuotaDays : null,
               watchlistSyncMovies: values.watchlistSyncMovies,
               watchlistSyncTv: values.watchlistSyncTv,
+              hideWatched: values.hideWatched,
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -635,6 +640,26 @@ const UserGeneralSettings = () => {
                     </div>
                   </div>
                 )}
+              {(currentSettings.traktEnabled || !!user?.traktUsername) && (
+                <div className="form-row">
+                  <label htmlFor="hideWatched" className="checkbox-label">
+                    <span>{intl.formatMessage(messages.hideWatched)}</span>
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.hideWatchedTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="checkbox"
+                      id="hideWatched"
+                      name="hideWatched"
+                      onChange={() => {
+                        setFieldValue('hideWatched', !values.hideWatched);
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
               <div className="actions">
                 <div className="flex justify-end">
                   <span className="ml-3 inline-flex rounded-md shadow-sm">

@@ -12,6 +12,7 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
+import { getTraktRecommendations, getTraktWatchlist } from '@server/lib/trakt';
 import logger from '@server/logger';
 import { mapProductionCompany } from '@server/models/Movie';
 import {
@@ -972,5 +973,90 @@ discoverRoutes.get<Record<string, unknown>, WatchlistResponse>(
     });
   }
 );
+
+discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
+  try {
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const user = await getRepository(User).findOneOrFail({
+      where: { id: req.user?.id },
+    });
+
+    return res.status(200).json(
+      await getTraktWatchlist({
+        page,
+        user,
+      })
+    );
+  } catch (error) {
+    logger.debug('Something went wrong retrieving Trakt watchlist items', {
+      label: 'API',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      userId: req.user?.id,
+    });
+
+    return next({
+      status: 500,
+      message: 'Unable to retrieve Trakt watchlist.',
+    });
+  }
+});
+
+discoverRoutes.get('/trakt/recommended/movies', async (req, res, next) => {
+  try {
+    const user = await getRepository(User).findOneOrFail({
+      where: { id: req.user?.id },
+    });
+
+    return res.status(200).json(
+      await getTraktRecommendations({
+        type: 'movie',
+        user,
+      })
+    );
+  } catch (error) {
+    logger.debug(
+      'Something went wrong retrieving Trakt movie recommendations',
+      {
+        label: 'API',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        userId: req.user?.id,
+      }
+    );
+
+    return next({
+      status: 500,
+      message: 'Unable to retrieve Trakt movie recommendations.',
+    });
+  }
+});
+
+discoverRoutes.get('/trakt/recommended/tv', async (req, res, next) => {
+  try {
+    const user = await getRepository(User).findOneOrFail({
+      where: { id: req.user?.id },
+    });
+
+    return res.status(200).json(
+      await getTraktRecommendations({
+        type: 'tv',
+        user,
+      })
+    );
+  } catch (error) {
+    logger.debug(
+      'Something went wrong retrieving Trakt series recommendations',
+      {
+        label: 'API',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        userId: req.user?.id,
+      }
+    );
+
+    return next({
+      status: 500,
+      message: 'Unable to retrieve Trakt series recommendations.',
+    });
+  }
+});
 
 export default discoverRoutes;

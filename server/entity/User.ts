@@ -47,6 +47,9 @@ export class User {
     'jellyfinDeviceId',
     'jellyfinAuthToken',
     'plexToken',
+    'traktAccessToken',
+    'traktRefreshToken',
+    'traktTokenExpiresAt',
     'settings',
   ];
 
@@ -99,6 +102,21 @@ export class User {
 
   @Column({ type: 'varchar', nullable: true, select: false })
   public plexToken?: string | null;
+
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  public traktUsername?: string | null;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public traktAccessToken?: string | null;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public traktRefreshToken?: string | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true, select: false })
+  public traktTokenExpiresAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public traktConnectedAt?: Date | null;
 
   @Column({ type: 'integer', default: 0 })
   public permissions = 0;

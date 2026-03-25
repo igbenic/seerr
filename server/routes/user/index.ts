@@ -19,6 +19,7 @@ import type {
 } from '@server/interfaces/api/userInterfaces';
 import { Permission, hasPermission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import { getTraktWatchData } from '@server/lib/trakt';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { getHostname } from '@server/utils/getHostname';
@@ -811,20 +812,28 @@ router.get<{ id: string }, UserWatchDataResponse>(
   '/:id/watch_data',
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
-    const settings = getSettings().tautulli;
-
-    if (!settings.hostname || !settings.port || !settings.apiKey) {
-      return next({
-        status: 404,
-        message: 'Tautulli API not configured.',
-      });
-    }
-
     try {
       const user = await getRepository(User).findOneOrFail({
         where: { id: Number(req.params.id) },
-        select: { id: true, plexId: true },
+        select: { id: true, plexId: true, traktUsername: true },
       });
+
+      if (user.traktUsername) {
+        const traktWatchData = await getTraktWatchData(user.id);
+
+        if (traktWatchData) {
+          return res.status(200).json(traktWatchData);
+        }
+      }
+
+      const settings = getSettings().tautulli;
+
+      if (!settings.hostname || !settings.port || !settings.apiKey) {
+        return next({
+          status: 404,
+          message: 'No watch history provider is configured.',
+        });
+      }
 
       const tautulli = new TautulliAPI(settings);
 
@@ -890,6 +899,7 @@ router.get<{ id: string }, UserWatchDataResponse>(
       return res.status(200).json({
         recentlyWatched,
         playCount: watchStats.total_plays,
+        source: 'tautulli',
       });
     } catch (e) {
       logger.error('Something went wrong fetching user watch data', {

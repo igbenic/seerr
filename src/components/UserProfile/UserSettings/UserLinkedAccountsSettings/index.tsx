@@ -1,6 +1,7 @@
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
+import TraktLogo from '@app/assets/services/trakt.svg';
 import Alert from '@app/components/Common/Alert';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Dropdown from '@app/components/Common/Dropdown';
@@ -33,6 +34,12 @@ const messages = defineMessages(
     plexErrorExists: 'This account is already linked to a Plex user',
     errorUnknown: 'An unknown error occurred',
     deleteFailed: 'Unable to delete linked account.',
+    traktConnected: 'Trakt account connected successfully.',
+    traktDisconnected: 'Trakt account disconnected.',
+    traktAlreadyLinked: 'That Trakt account is already linked to another user.',
+    traktInvalidState:
+      'The Trakt sign-in callback could not be validated. Please try again.',
+    traktError: 'Unable to complete the Trakt connection.',
   }
 );
 
@@ -42,6 +49,7 @@ enum LinkedAccountType {
   Plex = 'Plex',
   Jellyfin = 'Jellyfin',
   Emby = 'Emby',
+  Trakt = 'Trakt',
 }
 
 type LinkedAccount = {
@@ -66,6 +74,8 @@ const UserLinkedAccountsSettings = () => {
   const [error, setError] = useState<string | null>(null);
 
   const applicationName = settings.currentSettings.applicationTitle;
+  const traktResult =
+    typeof router.query.trakt === 'string' ? router.query.trakt : undefined;
 
   const accounts: LinkedAccount[] = useMemo(() => {
     const accounts: LinkedAccount[] = [];
@@ -85,8 +95,47 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
+    if (user.traktUsername) {
+      accounts.push({
+        type: LinkedAccountType.Trakt,
+        username: user.traktUsername,
+      });
+    }
     return accounts;
   }, [user]);
+
+  const traktAlert = useMemo(() => {
+    switch (traktResult) {
+      case 'connected':
+        return {
+          title: intl.formatMessage(messages.traktConnected),
+          type: 'info' as const,
+        };
+      case 'disconnected':
+        return {
+          title: intl.formatMessage(messages.traktDisconnected),
+          type: 'info' as const,
+        };
+      case 'already-linked':
+        return {
+          title: intl.formatMessage(messages.traktAlreadyLinked),
+          type: 'error' as const,
+        };
+      case 'invalid-state':
+        return {
+          title: intl.formatMessage(messages.traktInvalidState),
+          type: 'error' as const,
+        };
+      case 'error':
+      case 'not-configured':
+        return {
+          title: intl.formatMessage(messages.traktError),
+          type: 'error' as const,
+        };
+      default:
+        return null;
+    }
+  }, [intl, traktResult]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -138,13 +187,30 @@ const UserLinkedAccountsSettings = () => {
         settings.currentSettings.mediaServerType !== MediaServerType.EMBY ||
         accounts.some((a) => a.type === LinkedAccountType.Emby),
     },
+    {
+      name: 'Trakt',
+      action: () => {
+        window.location.assign(
+          `/api/v1/auth/trakt/connect?redirect=${encodeURIComponent(
+            router.asPath
+          )}`
+        );
+      },
+      hide:
+        !settings.currentSettings.traktEnabled ||
+        accounts.some((a) => a.type === LinkedAccountType.Trakt),
+    },
   ].filter((l) => !l.hide);
 
   const deleteRequest = async (account: string) => {
     try {
-      await axios.delete(
-        `/api/v1/user/${user?.id}/settings/linked-accounts/${account}`
-      );
+      if (account === 'trakt') {
+        await axios.delete('/api/v1/auth/trakt/disconnect');
+      } else {
+        await axios.delete(
+          `/api/v1/user/${user?.id}/settings/linked-accounts/${account}`
+        );
+      }
     } catch {
       setError(intl.formatMessage(messages.deleteFailed));
     }
@@ -173,6 +239,7 @@ const UserLinkedAccountsSettings = () => {
   }
 
   const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
+  const enableTraktUnlink = currentUser?.id === user?.id;
 
   return (
     <>
@@ -206,6 +273,7 @@ const UserLinkedAccountsSettings = () => {
           </div>
         )}
       </div>
+      {traktAlert && <Alert title={traktAlert.title} type={traktAlert.type} />}
       {error && <Alert title={error} type="error" />}
       {accounts.length ? (
         <ul className="space-y-4">
@@ -221,6 +289,8 @@ const UserLinkedAccountsSettings = () => {
                   </div>
                 ) : acct.type === LinkedAccountType.Emby ? (
                   <EmbyLogo />
+                ) : acct.type === LinkedAccountType.Trakt ? (
+                  <TraktLogo />
                 ) : (
                   <JellyfinLogo />
                 )}
@@ -234,11 +304,17 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {enableMediaServerUnlink && (
+              {((acct.type === LinkedAccountType.Trakt && enableTraktUnlink) ||
+                (acct.type !== LinkedAccountType.Trakt &&
+                  enableMediaServerUnlink)) && (
                 <ConfirmButton
                   onClick={() => {
                     deleteRequest(
-                      acct.type === LinkedAccountType.Plex ? 'plex' : 'jellyfin'
+                      acct.type === LinkedAccountType.Plex
+                        ? 'plex'
+                        : acct.type === LinkedAccountType.Trakt
+                          ? 'trakt'
+                          : 'jellyfin'
                     );
                   }}
                   confirmText={intl.formatMessage(globalMessages.areyousure)}

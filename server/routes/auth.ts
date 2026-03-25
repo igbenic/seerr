@@ -1,5 +1,6 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
+import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType, ServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
@@ -8,6 +9,13 @@ import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import {
+  buildTraktRedirectUri,
+  clearTraktConnection,
+  getTraktStatus,
+  isTraktConfigured,
+  persistTraktTokens,
+} from '@server/lib/trakt';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
@@ -15,11 +23,56 @@ import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import net from 'net';
 import validator from 'validator';
 
 const authRoutes = Router();
+const DEFAULT_TRAKT_REDIRECT = '/profile/settings/linked-accounts';
+
+const getSafeTraktRedirectPath = (redirect?: string | string[]): string => {
+  if (typeof redirect !== 'string' || !redirect) {
+    return DEFAULT_TRAKT_REDIRECT;
+  }
+
+  try {
+    const parsed = new URL(redirect, 'http://localhost');
+
+    if (
+      parsed.origin !== 'http://localhost' ||
+      !parsed.pathname.startsWith('/')
+    ) {
+      return DEFAULT_TRAKT_REDIRECT;
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return DEFAULT_TRAKT_REDIRECT;
+  }
+};
+
+const clearTraktOauthSession = (req: {
+  session?: {
+    traktOAuthRedirect?: string;
+    traktOAuthState?: string;
+  };
+}) => {
+  if (!req.session) {
+    return;
+  }
+
+  delete req.session.traktOAuthRedirect;
+  delete req.session.traktOAuthState;
+};
+
+const buildTraktResultRedirect = (redirectPath: string, status: string) => {
+  const parsed = new URL(redirectPath, 'http://localhost');
+
+  parsed.searchParams.set('trakt', status);
+
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+};
 
 authRoutes.get('/me', isAuthenticated(), async (req, res) => {
   const userRepository = getRepository(User);
@@ -45,6 +98,181 @@ authRoutes.get('/me', isAuthenticated(), async (req, res) => {
 
   return res.status(200).json(user);
 });
+
+authRoutes.get('/trakt/status', isAuthenticated(), async (req, res, next) => {
+  if (!req.user) {
+    return next({ status: 500, message: 'Please sign in.' });
+  }
+
+  try {
+    return res.status(200).json(await getTraktStatus(req.user.id));
+  } catch (error) {
+    return next({
+      status: 500,
+      message:
+        error instanceof Error ? error.message : 'Unable to load Trakt status.',
+    });
+  }
+});
+
+authRoutes.get('/trakt/connect', isAuthenticated(), (req, res, next) => {
+  if (!req.user) {
+    return next({ status: 500, message: 'Please sign in.' });
+  }
+
+  if (!req.session) {
+    return next({ status: 500, message: 'Session unavailable.' });
+  }
+
+  if (!isTraktConfigured()) {
+    return next({ status: 404, message: 'Trakt is not configured.' });
+  }
+
+  const host = req.get('host');
+
+  if (!host) {
+    return next({ status: 500, message: 'Unable to determine request host.' });
+  }
+
+  const traktSettings = getSettings().trakt;
+  const redirectPath = getSafeTraktRedirectPath(
+    req.query.redirect as string | string[] | undefined
+  );
+  const state = randomUUID();
+  const redirectUri = buildTraktRedirectUri({
+    host,
+    protocol: req.protocol,
+  });
+
+  req.session.traktOAuthRedirect = redirectPath;
+  req.session.traktOAuthState = state;
+
+  return res.redirect(
+    TraktAPI.buildAuthorizationUrl({
+      clientId: traktSettings.clientId,
+      redirectUri,
+      state,
+    })
+  );
+});
+
+authRoutes.get('/trakt/callback', async (req, res) => {
+  const redirectPath = getSafeTraktRedirectPath(
+    req.session?.traktOAuthRedirect ?? DEFAULT_TRAKT_REDIRECT
+  );
+  const redirectTo = (status: string) =>
+    res.redirect(buildTraktResultRedirect(redirectPath, status));
+
+  if (!req.user || !req.session?.traktOAuthState) {
+    clearTraktOauthSession(req);
+
+    return redirectTo('error');
+  }
+
+  if (!isTraktConfigured()) {
+    clearTraktOauthSession(req);
+
+    return redirectTo('not-configured');
+  }
+
+  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+  const state =
+    typeof req.query.state === 'string' ? req.query.state : undefined;
+  const host = req.get('host');
+
+  if (!code || !state || !host) {
+    clearTraktOauthSession(req);
+
+    return redirectTo('error');
+  }
+
+  if (state !== req.session.traktOAuthState) {
+    logger.warn('Rejected Trakt callback due to invalid OAuth state', {
+      label: 'Auth',
+      userId: req.user.id,
+      ip: req.ip,
+    });
+    clearTraktOauthSession(req);
+
+    return redirectTo('invalid-state');
+  }
+
+  const traktSettings = getSettings().trakt;
+  const redirectUri = buildTraktRedirectUri({
+    host,
+    protocol: req.protocol,
+  });
+
+  try {
+    const token = await TraktAPI.exchangeCode({
+      clientId: traktSettings.clientId,
+      clientSecret: traktSettings.clientSecret,
+      code,
+      redirectUri,
+    });
+    const traktApi = new TraktAPI({
+      accessToken: token.access_token,
+      clientId: traktSettings.clientId,
+      clientSecret: traktSettings.clientSecret,
+      refreshToken: token.refresh_token,
+      tokenExpiresAt: new Date((token.created_at + token.expires_in) * 1000),
+    });
+    const currentUser = await traktApi.getCurrentUserSettings();
+    const traktUsername =
+      currentUser.user.ids.slug || currentUser.user.username;
+    const userRepository = getRepository(User);
+    const existingUser = await userRepository.findOne({
+      where: { traktUsername },
+      select: ['id', 'traktUsername'],
+    });
+
+    if (existingUser && existingUser.id !== req.user.id) {
+      clearTraktOauthSession(req);
+
+      return redirectTo('already-linked');
+    }
+
+    await persistTraktTokens(req.user.id, token, traktUsername);
+    clearTraktOauthSession(req);
+
+    return redirectTo('connected');
+  } catch (error) {
+    logger.error('Something went wrong linking Trakt account', {
+      label: 'Auth',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      userId: req.user.id,
+      ip: req.ip,
+    });
+    clearTraktOauthSession(req);
+
+    return redirectTo('error');
+  }
+});
+
+authRoutes.delete(
+  '/trakt/disconnect',
+  isAuthenticated(),
+  async (req, res, next) => {
+    if (!req.user) {
+      return next({ status: 500, message: 'Please sign in.' });
+    }
+
+    try {
+      await clearTraktConnection(req.user.id);
+      clearTraktOauthSession(req);
+
+      return res.status(204).send();
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to disconnect Trakt account.',
+      });
+    }
+  }
+);
 
 authRoutes.post('/plex', async (req, res, next) => {
   const settings = getSettings();

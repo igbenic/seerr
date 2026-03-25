@@ -7,7 +7,7 @@ let commitTag = 'local';
 
 if (existsSync(COMMIT_TAG_PATH)) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  commitTag = require(COMMIT_TAG_PATH).commitTag;
+  commitTag = require(COMMIT_TAG_PATH).commitTag || 'local';
   logger.info(`Commit Tag: ${commitTag}`);
 }
 

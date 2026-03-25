@@ -12,6 +12,7 @@ import PlexWatchlistSlider from '@app/components/Discover/PlexWatchlistSlider';
 import RecentlyAddedSlider from '@app/components/Discover/RecentlyAddedSlider';
 import RecentRequestsSlider from '@app/components/Discover/RecentRequestsSlider';
 import StudioSlider from '@app/components/Discover/StudioSlider';
+import TraktWatchlistSlider from '@app/components/Discover/TraktWatchlistSlider';
 import TvGenreSlider from '@app/components/Discover/TvGenreSlider';
 import MediaSlider from '@app/components/MediaSlider';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
@@ -395,6 +396,31 @@ const Discover = () => {
                 }&watchProviders=${slider.data?.split(',')[1]}`}
               />
             );
+            break;
+          case DiscoverSliderType.TRAKT_RECOMMENDED_MOVIES:
+            sliderComponent = (
+              <MediaSlider
+                sliderKey="trakt-recommended-movies"
+                title={intl.formatMessage(sliderTitles.traktrecommendedmovies)}
+                url="/api/v1/discover/trakt/recommended/movies"
+                linkUrl="/discover/trakt/movies"
+                hideWhenEmpty
+              />
+            );
+            break;
+          case DiscoverSliderType.TRAKT_RECOMMENDED_TV:
+            sliderComponent = (
+              <MediaSlider
+                sliderKey="trakt-recommended-tv"
+                title={intl.formatMessage(sliderTitles.traktrecommendedtv)}
+                url="/api/v1/discover/trakt/recommended/tv"
+                linkUrl="/discover/trakt/tv"
+                hideWhenEmpty
+              />
+            );
+            break;
+          case DiscoverSliderType.TRAKT_WATCHLIST:
+            sliderComponent = <TraktWatchlistSlider />;
             break;
         }
 

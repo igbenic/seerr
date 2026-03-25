@@ -27,4 +27,5 @@ export interface QuotaResponse {
 export interface UserWatchDataResponse {
   recentlyWatched: Media[];
   playCount: number;
+  source?: 'tautulli' | 'trakt';
 }

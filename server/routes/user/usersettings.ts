@@ -63,6 +63,7 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         globalTvQuotaLimit: defaultQuotas.tv.quotaLimit,
         watchlistSyncMovies: user.settings?.watchlistSyncMovies,
         watchlistSyncTv: user.settings?.watchlistSyncTv,
+        hideWatched: user.settings?.hideWatched,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -129,6 +130,7 @@ userSettingsRoutes.post<
         originalLanguage: req.body.originalLanguage,
         watchlistSyncMovies: req.body.watchlistSyncMovies,
         watchlistSyncTv: req.body.watchlistSyncTv,
+        hideWatched: req.body.hideWatched,
       });
     } else {
       user.settings.discordId = req.body.discordId;
@@ -138,6 +140,7 @@ userSettingsRoutes.post<
       user.settings.originalLanguage = req.body.originalLanguage;
       user.settings.watchlistSyncMovies = req.body.watchlistSyncMovies;
       user.settings.watchlistSyncTv = req.body.watchlistSyncTv;
+      user.settings.hideWatched = req.body.hideWatched;
     }
 
     const savedUser = await userRepository.save(user);
@@ -151,6 +154,7 @@ userSettingsRoutes.post<
       originalLanguage: savedUser.settings?.originalLanguage,
       watchlistSyncMovies: savedUser.settings?.watchlistSyncMovies,
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
+      hideWatched: savedUser.settings?.hideWatched,
       email: savedUser.email,
     });
   } catch (e) {

@@ -75,7 +75,7 @@ const UserProfile = () => {
   );
   const { data: watchData, error: watchDataError } =
     useSWR<UserWatchDataResponse>(
-      user?.userType === UserType.PLEX &&
+      (user?.userType === UserType.PLEX || !!user?.traktUsername) &&
         (user.id === currentUser?.id || currentHasPermission(Permission.ADMIN))
         ? `/api/v1/user/${user.id}/watch_data`
         : null

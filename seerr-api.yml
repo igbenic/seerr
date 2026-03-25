@@ -105,6 +105,10 @@ components:
         plexUsername:
           type: string
           readOnly: true
+        traktUsername:
+          type: string
+          nullable: true
+          readOnly: true
         plexToken:
           type: string
           readOnly: true
@@ -217,6 +221,11 @@ components:
           type: boolean
           nullable: true
           description: 'Enable watchlist sync for TV'
+          example: false
+        hideWatched:
+          type: boolean
+          nullable: true
+          description: 'Hide watched Trakt titles from Trakt-powered discover surfaces'
           example: false
     MainSettings:
       type: object
@@ -710,6 +719,72 @@ components:
         initialized:
           type: boolean
           example: false
+        traktEnabled:
+          type: boolean
+          example: false
+    TraktSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        clientId:
+          type: string
+          example: trakt-client-id
+        clientSecret:
+          type: string
+          example: trakt-client-secret
+    TraktAuthStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          example: false
+        connectedAt:
+          type: string
+          nullable: true
+          example: '2026-03-24T12:00:00.000Z'
+        enabled:
+          type: boolean
+          example: true
+        username:
+          type: string
+          nullable: true
+          example: trakt-user
+    DiscoverWatchlistItem:
+      type: object
+      properties:
+        id:
+          type: number
+          example: 603
+        ratingKey:
+          type: string
+          example: trakt-movie-1234
+        tmdbId:
+          type: number
+          example: 603
+        mediaType:
+          type: string
+          enum: [movie, tv]
+        title:
+          type: string
+          example: The Matrix
+    DiscoverWatchlistResponse:
+      type: object
+      properties:
+        page:
+          type: number
+          example: 1
+        totalPages:
+          type: number
+          example: 1
+        totalResults:
+          type: number
+          example: 1
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoverWatchlistItem'
     MovieResult:
       type: object
       required:
@@ -2246,6 +2321,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NetworkSettings'
+  /settings/trakt:
+    get:
+      summary: Get Trakt settings
+      description: Retrieves the current Trakt integration settings.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktSettings'
+    post:
+      summary: Update Trakt settings
+      description: Updates Trakt integration settings with the provided values.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TraktSettings'
+      responses:
+        '200':
+          description: Values were successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktSettings'
   /settings/main/regenerate:
     post:
       summary: Get main settings with newly-generated API key
@@ -3925,6 +4031,62 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+  /auth/trakt/status:
+    get:
+      summary: Get Trakt connection status for the current user
+      tags:
+        - auth
+      responses:
+        '200':
+          description: Trakt auth status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktAuthStatus'
+  /auth/trakt/connect:
+    get:
+      summary: Begin Trakt OAuth flow
+      description: Redirects the current user to Trakt to approve account access.
+      tags:
+        - auth
+      parameters:
+        - in: query
+          name: redirect
+          schema:
+            type: string
+            example: /profile/settings/linked-accounts
+          required: false
+      responses:
+        '302':
+          description: Redirect to Trakt OAuth authorization
+  /auth/trakt/callback:
+    get:
+      summary: Complete Trakt OAuth flow
+      description: Handles the Trakt OAuth callback and redirects the user back to Seerr.
+      tags:
+        - auth
+      parameters:
+        - in: query
+          name: code
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: state
+          schema:
+            type: string
+          required: true
+      responses:
+        '302':
+          description: Redirect to the linked accounts page with connection status
+  /auth/trakt/disconnect:
+    delete:
+      summary: Disconnect the current user's Trakt account
+      tags:
+        - auth
+      responses:
+        '204':
+          description: Trakt disconnected
   /auth/plex:
     post:
       summary: Sign in using a Plex token
@@ -5209,6 +5371,9 @@ paths:
                       $ref: '#/components/schemas/MediaInfo'
                   playCount:
                     type: number
+                  source:
+                    type: string
+                    enum: [tautulli, trakt]
   /search:
     get:
       summary: Search for movies, TV shows, or people
@@ -6180,28 +6345,92 @@ paths:
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/DiscoverWatchlistResponse'
+  /discover/trakt/watchlist:
+    get:
+      summary: Get the current user's Trakt watchlist
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+      responses:
+        '200':
+          description: Trakt watchlist data returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverWatchlistResponse'
+  /discover/trakt/recommended/movies:
+    get:
+      summary: Get Trakt-powered movie recommendations for the current user
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+      responses:
+        '200':
+          description: Trakt movie recommendations returned
+          content:
+            application/json:
+              schema:
                 type: object
                 properties:
                   page:
                     type: number
+                    example: 1
                   totalPages:
                     type: number
+                    example: 1
                   totalResults:
                     type: number
+                    example: 20
                   results:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        tmdbId:
-                          type: number
-                          example: 1
-                        ratingKey:
-                          type: string
-                        type:
-                          type: string
-                        title:
-                          type: string
+                      $ref: '#/components/schemas/MovieResult'
+  /discover/trakt/recommended/tv:
+    get:
+      summary: Get Trakt-powered TV recommendations for the current user
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+      responses:
+        '200':
+          description: Trakt TV recommendations returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page:
+                    type: number
+                    example: 1
+                  totalPages:
+                    type: number
+                    example: 1
+                  totalResults:
+                    type: number
+                    example: 20
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TvResult'
   /request:
     get:
       summary: Get all requests

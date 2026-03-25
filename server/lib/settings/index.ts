@@ -64,6 +64,12 @@ export interface TautulliSettings {
   externalUrl?: string;
 }
 
+export interface TraktSettings {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+}
+
 export interface DVRSettings {
   id: number;
   name: string;
@@ -201,6 +207,7 @@ interface FullPublicSettings extends PublicSettings {
   jellyfinExternalHost?: string;
   jellyfinForgotPasswordUrl?: string;
   jellyfinServerName?: string;
+  traktEnabled: boolean;
   partialRequestsEnabled: boolean;
   enableSpecialEpisodes: boolean;
   cacheImages: boolean;
@@ -366,6 +373,7 @@ export interface AllSettings {
   plex: PlexSettings;
   jellyfin: JellyfinSettings;
   tautulli: TautulliSettings;
+  trakt: TraktSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
   public: PublicSettings;
@@ -435,6 +443,11 @@ class Settings {
         apiKey: '',
       },
       tautulli: {},
+      trakt: {
+        enabled: false,
+        clientId: '',
+        clientSecret: '',
+      },
       metadataSettings: {
         tv: MetadataProviderType.TMDB,
         anime: MetadataProviderType.TMDB,
@@ -646,6 +659,14 @@ class Settings {
     this.data.tautulli = mergeSettings(this.data.tautulli, data);
   }
 
+  get trakt(): TraktSettings {
+    return this.data.trakt;
+  }
+
+  set trakt(data: TraktSettings) {
+    this.data.trakt = mergeSettings(this.data.trakt, data);
+  }
+
   get metadataSettings(): MetadataSettings {
     return this.data.metadataSettings;
   }
@@ -692,6 +713,10 @@ class Settings {
       mediaServerLogin: this.data.main.mediaServerLogin,
       jellyfinExternalHost: this.data.jellyfin.externalHostname,
       jellyfinForgotPasswordUrl: this.data.jellyfin.jellyfinForgotPasswordUrl,
+      traktEnabled:
+        this.data.trakt.enabled &&
+        !!this.data.trakt.clientId &&
+        !!this.data.trakt.clientSecret,
       movie4kEnabled: this.data.radarr.some(
         (radarr) => radarr.is4k && radarr.isDefault
       ),

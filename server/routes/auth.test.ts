@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 
+import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import PreparedEmail from '@server/lib/email';
@@ -109,6 +110,186 @@ describe('GET /auth/me', () => {
     assert.ok(res.body.warnings.includes('userEmailRequired'));
 
     settings.notifications.agents.email.options.userEmailRequired = false;
+  });
+});
+
+describe('Trakt auth routes', () => {
+  beforeEach(() => {
+    const settings = getSettings();
+    settings.trakt.enabled = false;
+    settings.trakt.clientId = '';
+    settings.trakt.clientSecret = '';
+  });
+
+  it('returns disconnected Trakt status when Trakt is not configured', async () => {
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get('/auth/trakt/status');
+
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body, {
+      connected: false,
+      connectedAt: null,
+      enabled: false,
+      username: null,
+    });
+  });
+
+  it('redirects to Trakt OAuth when Trakt is configured', async () => {
+    const settings = getSettings();
+    settings.trakt.enabled = true;
+    settings.trakt.clientId = 'trakt-client-id';
+    settings.trakt.clientSecret = 'trakt-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get(
+      '/auth/trakt/connect?redirect=/profile/settings/linked-accounts'
+    );
+
+    assert.strictEqual(res.status, 302);
+    assert.match(
+      res.headers.location,
+      /^https:\/\/trakt\.tv\/oauth\/authorize\?/
+    );
+    assert.match(res.headers.location, /client_id=trakt-client-id/);
+  });
+
+  it('rejects a callback with an invalid OAuth state', async () => {
+    const settings = getSettings();
+    settings.trakt.enabled = true;
+    settings.trakt.clientId = 'trakt-client-id';
+    settings.trakt.clientSecret = 'trakt-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    await agent.get(
+      '/auth/trakt/connect?redirect=/profile/settings/linked-accounts'
+    );
+
+    const res = await agent.get(
+      '/auth/trakt/callback?code=test-code&state=not-the-session-state'
+    );
+
+    assert.strictEqual(res.status, 302);
+    assert.strictEqual(
+      res.headers.location,
+      '/profile/settings/linked-accounts?trakt=invalid-state'
+    );
+  });
+
+  it('connects a Trakt account and keeps secret fields out of /auth/me', async () => {
+    const settings = getSettings();
+    settings.trakt.enabled = true;
+    settings.trakt.clientId = 'trakt-client-id';
+    settings.trakt.clientSecret = 'trakt-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+    const connectRes = await agent.get(
+      '/auth/trakt/connect?redirect=/profile/settings/linked-accounts'
+    );
+    const state = new URL(connectRes.headers.location).searchParams.get(
+      'state'
+    );
+    assert.ok(state);
+
+    const exchangeCodeMock = mock.method(
+      TraktAPI,
+      'exchangeCode',
+      async () => ({
+        access_token: 'trakt-access-token',
+        created_at: 1_700_000_000,
+        expires_in: 7200,
+        refresh_token: 'trakt-refresh-token',
+        scope: 'public',
+        token_type: 'bearer',
+      })
+    );
+    const currentUserSettingsMock = mock.method(
+      TraktAPI.prototype,
+      'getCurrentUserSettings',
+      async () => ({
+        user: {
+          username: 'trakt-user',
+          ids: {
+            slug: 'trakt-user',
+            trakt: 1234,
+            uuid: 'trakt-user-uuid',
+          },
+        },
+      })
+    );
+
+    try {
+      const callbackRes = await agent.get(
+        `/auth/trakt/callback?code=test-code&state=${state}`
+      );
+
+      assert.strictEqual(callbackRes.status, 302);
+      assert.strictEqual(
+        callbackRes.headers.location,
+        '/profile/settings/linked-accounts?trakt=connected'
+      );
+
+      const userRepo = getRepository(User);
+      const linkedUser = await userRepo
+        .createQueryBuilder('user')
+        .addSelect([
+          'user.traktAccessToken',
+          'user.traktRefreshToken',
+          'user.traktTokenExpiresAt',
+        ])
+        .where('user.email = :email', { email: 'admin@seerr.dev' })
+        .getOneOrFail();
+
+      assert.strictEqual(linkedUser.traktUsername, 'trakt-user');
+      assert.strictEqual(linkedUser.traktAccessToken, 'trakt-access-token');
+      assert.strictEqual(linkedUser.traktRefreshToken, 'trakt-refresh-token');
+      assert.ok(linkedUser.traktTokenExpiresAt);
+
+      const meRes = await agent.get('/auth/me');
+      assert.strictEqual(meRes.status, 200);
+      assert.ok(!('traktAccessToken' in meRes.body));
+      assert.ok(!('traktRefreshToken' in meRes.body));
+      assert.strictEqual(meRes.body.traktUsername, 'trakt-user');
+    } finally {
+      exchangeCodeMock.mock.restore();
+      currentUserSettingsMock.mock.restore();
+    }
+  });
+
+  it('disconnects a linked Trakt account', async () => {
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+    const userRepo = getRepository(User);
+    const user = await userRepo.findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    user.traktUsername = 'trakt-user';
+    await userRepo.save(user);
+    await userRepo.update(user.id, {
+      traktAccessToken: 'trakt-access-token',
+      traktConnectedAt: new Date('2026-01-01T00:00:00.000Z'),
+      traktRefreshToken: 'trakt-refresh-token',
+      traktTokenExpiresAt: new Date('2026-01-01T01:00:00.000Z'),
+    });
+
+    const res = await agent.delete('/auth/trakt/disconnect');
+
+    assert.strictEqual(res.status, 204);
+
+    const disconnectedUser = await userRepo
+      .createQueryBuilder('user')
+      .addSelect([
+        'user.traktAccessToken',
+        'user.traktRefreshToken',
+        'user.traktTokenExpiresAt',
+      ])
+      .where('user.email = :email', { email: 'admin@seerr.dev' })
+      .getOneOrFail();
+
+    assert.strictEqual(disconnectedUser.traktUsername, null);
+    assert.strictEqual(disconnectedUser.traktAccessToken, null);
+    assert.strictEqual(disconnectedUser.traktRefreshToken, null);
+    assert.strictEqual(disconnectedUser.traktTokenExpiresAt, null);
+    assert.strictEqual(disconnectedUser.traktConnectedAt, null);
   });
 });
 
