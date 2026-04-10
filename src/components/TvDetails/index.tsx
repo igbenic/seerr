@@ -109,6 +109,14 @@ const messages = defineMessages('components.TvDetails', {
   markWatched: 'Mark Watched',
   markUnwatched: 'Mark Unwatched',
   watchedError: 'Unable to update watched status.',
+  traktWatched: 'Watched',
+  traktWatchedOn: 'Watched {date}',
+  traktEpisodeProgress:
+    '{watchedEpisodeCount}/{eligibleEpisodeCount} episodes watched',
+  traktSeasonProgress:
+    '{watchedSeasonCount}/{eligibleSeasonCount} seasons complete',
+  traktSeasonWatched: 'Watched',
+  traktSeasonPartial: '{watchedEpisodeCount}/{eligibleEpisodeCount} watched',
 });
 
 interface TvDetailsProps {
@@ -182,6 +190,24 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
   if (!data) {
     return <ErrorPage statusCode={404} />;
   }
+
+  const formatWatchDate = (value?: Date | string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    return intl.formatDate(date, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
 
   const mediaLinks: PlayButtonLink[] = [];
 
@@ -633,6 +659,46 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   </>
                 ))}
           </span>
+          {data.userWatchStatus &&
+            data.userWatchStatus.eligibleEpisodeCount > 0 && (
+              <div
+                className="mt-3 flex flex-wrap gap-2"
+                data-testid="tv-watch-summary"
+              >
+                {data.userWatchStatus.watched ? (
+                  <Badge badgeType="success">
+                    {formatWatchDate(data.userWatchStatus.watchedAt)
+                      ? intl.formatMessage(messages.traktWatchedOn, {
+                          date: formatWatchDate(data.userWatchStatus.watchedAt),
+                        })
+                      : intl.formatMessage(messages.traktWatched)}
+                  </Badge>
+                ) : (
+                  <>
+                    {data.userWatchStatus.watchedEpisodeCount > 0 && (
+                      <Badge badgeType="primary">
+                        {intl.formatMessage(messages.traktEpisodeProgress, {
+                          eligibleEpisodeCount:
+                            data.userWatchStatus.eligibleEpisodeCount,
+                          watchedEpisodeCount:
+                            data.userWatchStatus.watchedEpisodeCount,
+                        })}
+                      </Badge>
+                    )}
+                    {data.userWatchStatus.watchedSeasonCount > 0 && (
+                      <Badge badgeType="dark">
+                        {intl.formatMessage(messages.traktSeasonProgress, {
+                          eligibleSeasonCount:
+                            data.userWatchStatus.eligibleSeasonCount,
+                          watchedSeasonCount:
+                            data.userWatchStatus.watchedSeasonCount,
+                        })}
+                      </Badge>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
         </div>
         <div className="media-actions">
           {showHideButton &&
@@ -666,7 +732,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                     )}
                   >
                     <Button
-                      buttonType={data.userWatchStatus.watched ? 'primary' : 'ghost'}
+                      buttonType={
+                        data.userWatchStatus.watched ? 'primary' : 'ghost'
+                      }
                       className="z-40 mr-2"
                       buttonSize={'md'}
                       onClick={onClickWatchStatusBtn}
@@ -927,6 +995,35 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                 episodeCount: season.episodeCount,
                               })}
                             </Badge>
+                            {season.userWatchStatus?.eligibleEpisodeCount ? (
+                              <div
+                                data-testid={`season-watch-progress-${season.seasonNumber}`}
+                              >
+                                <Badge
+                                  badgeType={
+                                    season.userWatchStatus.watched
+                                      ? 'success'
+                                      : 'primary'
+                                  }
+                                >
+                                  {season.userWatchStatus.watched
+                                    ? intl.formatMessage(
+                                        messages.traktSeasonWatched
+                                      )
+                                    : intl.formatMessage(
+                                        messages.traktSeasonPartial,
+                                        {
+                                          eligibleEpisodeCount:
+                                            season.userWatchStatus
+                                              .eligibleEpisodeCount,
+                                          watchedEpisodeCount:
+                                            season.userWatchStatus
+                                              .watchedEpisodeCount,
+                                        }
+                                      )}
+                                </Badge>
+                              </div>
+                            ) : null}
                           </div>
                           {((!mSeason &&
                             request?.status === MediaRequestStatus.APPROVED) ||

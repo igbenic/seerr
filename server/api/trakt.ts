@@ -25,6 +25,17 @@ interface TraktEpisode {
   title?: string | null;
 }
 
+interface TraktWatchedEpisode {
+  number: number;
+  plays: number;
+  last_watched_at: string;
+}
+
+interface TraktWatchedSeason {
+  number: number;
+  episodes: TraktWatchedEpisode[];
+}
+
 interface TraktSyncHistoryPayload {
   movies?: {
     ids: Partial<Pick<TraktIds, 'imdb' | 'tmdb' | 'trakt'>>;
@@ -169,6 +180,17 @@ export interface TraktWatchedShow {
   last_watched_at: string;
   last_updated_at: string;
   show: TraktShow;
+  seasons?: TraktWatchedSeason[];
+}
+
+export interface TraktLastActivities {
+  all?: string;
+  movies?: {
+    watched_at?: string | null;
+  };
+  episodes?: {
+    watched_at?: string | null;
+  };
 }
 
 export interface TraktRatedMovie {
@@ -493,6 +515,26 @@ class TraktAPI {
         },
       },
       300
+    );
+  }
+
+  public async getWatchedShowsWithEpisodes(): Promise<TraktWatchedShow[]> {
+    return this.authenticatedGet<TraktWatchedShow[]>(
+      '/users/me/watched/shows',
+      {
+        params: {
+          extended: 'full',
+        },
+      },
+      300
+    );
+  }
+
+  public async getLastActivities(): Promise<TraktLastActivities> {
+    return this.authenticatedGet<TraktLastActivities>(
+      '/sync/last_activities',
+      undefined,
+      0
     );
   }
 

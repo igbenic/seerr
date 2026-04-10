@@ -1,8 +1,10 @@
 import TitleCard from '@app/components/TitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
+import defineMessages from '@app/utils/defineMessages';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import { useInView } from 'react-intersection-observer';
+import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
 export interface TmdbTitleCardProps {
@@ -14,6 +16,11 @@ export interface TmdbTitleCardProps {
   isAddedToWatchlist?: boolean;
   mutateParent?: () => void;
 }
+
+const messages = defineMessages('components.TitleCard.TmdbTitleCard', {
+  watched: 'Watched',
+  watchedProgress: '{watchedEpisodeCount}/{eligibleEpisodeCount} watched',
+});
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
   return (movie as MovieDetails).title !== undefined;
@@ -28,6 +35,7 @@ const TmdbTitleCard = ({
   isAddedToWatchlist = false,
   mutateParent,
 }: TmdbTitleCardProps) => {
+  const intl = useIntl();
   const { hasPermission } = useUser();
 
   const { ref, inView } = useInView({
@@ -58,6 +66,30 @@ const TmdbTitleCard = ({
     ) : null;
   }
 
+  const watchState = isMovie(title)
+    ? title.userWatchStatus?.watched
+      ? {
+          label: intl.formatMessage(messages.watched),
+          type: 'success' as const,
+        }
+      : undefined
+    : title.userWatchStatus?.watched
+      ? {
+          label: intl.formatMessage(messages.watched),
+          type: 'success' as const,
+        }
+      : title.userWatchStatus &&
+          title.userWatchStatus.watchedEpisodeCount > 0 &&
+          title.userWatchStatus.eligibleEpisodeCount > 0
+        ? {
+            label: intl.formatMessage(messages.watchedProgress, {
+              eligibleEpisodeCount: title.userWatchStatus.eligibleEpisodeCount,
+              watchedEpisodeCount: title.userWatchStatus.watchedEpisodeCount,
+            }),
+            type: 'primary' as const,
+          }
+        : undefined;
+
   return isMovie(title) ? (
     <TitleCard
       key={title.id}
@@ -74,6 +106,8 @@ const TmdbTitleCard = ({
       mediaType={'movie'}
       canExpand={canExpand}
       mutateParent={mutateParent}
+      watchStateBadgeType={watchState?.type}
+      watchStateLabel={watchState?.label}
     />
   ) : (
     <TitleCard
@@ -91,6 +125,8 @@ const TmdbTitleCard = ({
       mediaType={'tv'}
       canExpand={canExpand}
       mutateParent={mutateParent}
+      watchStateBadgeType={watchState?.type}
+      watchStateLabel={watchState?.label}
     />
   );
 };

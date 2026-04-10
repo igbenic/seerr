@@ -14,6 +14,7 @@ import { User } from '@server/entity/User';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import type { UserWatchDataResponse } from '@server/interfaces/api/userInterfaces';
 import { getSettings } from '@server/lib/settings';
+import { clearLocalTraktData } from '@server/lib/traktUserData';
 import logger from '@server/logger';
 import {
   mapMovieDetailsToResult,
@@ -78,6 +79,7 @@ export const loadUserWithTraktAuth = async (
 };
 
 export const clearTraktConnection = async (userId: number): Promise<void> => {
+  await clearLocalTraktData(userId);
   await getRepository(User).update(userId, {
     traktAccessToken: null,
     traktConnectedAt: null,
@@ -134,8 +136,16 @@ export const persistTraktTokens = async (
 ) => {
   const existingUser = await getRepository(User).findOne({
     where: { id: userId },
-    select: ['id', 'traktConnectedAt'],
+    select: ['id', 'traktConnectedAt', 'traktUsername'],
   });
+
+  if (
+    existingUser?.traktUsername &&
+    username &&
+    existingUser.traktUsername !== username
+  ) {
+    await clearLocalTraktData(userId);
+  }
 
   await getRepository(User).update(userId, {
     traktAccessToken: token.access_token,

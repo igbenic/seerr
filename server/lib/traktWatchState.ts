@@ -4,15 +4,18 @@ import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
-import { TraktHistory } from '@server/entity/TraktHistory';
+import { TraktWatchedEpisode } from '@server/entity/TraktWatchedEpisode';
+import { TraktWatchedMedia } from '@server/entity/TraktWatchedMedia';
 import type {
   EpisodeWatchedStatus,
   SeasonWatchedStatus,
   ShowWatchedStatus,
   WatchedStatus,
 } from '@server/interfaces/api/traktWatchInterfaces';
-import { mapSeasonWithEpisodes, type SeasonWithEpisodes } from '@server/models/Tv';
-import { Not, IsNull } from 'typeorm';
+import {
+  mapSeasonWithEpisodes,
+  type SeasonWithEpisodes,
+} from '@server/models/Tv';
 
 type EligibleEpisode = {
   airDate: string | null;
@@ -39,8 +42,8 @@ export const getLatestMovieWatchStatus = async (
   userId: number,
   tmdbId: number
 ): Promise<WatchedStatus> => {
-  const latest = await getRepository(TraktHistory).findOne({
-    order: { watchedAt: 'DESC', id: 'DESC' },
+  const latest = await getRepository(TraktWatchedMedia).findOne({
+    order: { lastWatchedAt: 'DESC', id: 'DESC' },
     where: {
       mediaType: MediaType.MOVIE,
       tmdbId,
@@ -50,7 +53,7 @@ export const getLatestMovieWatchStatus = async (
 
   return {
     watched: !!latest,
-    watchedAt: latest?.watchedAt ?? null,
+    watchedAt: latest?.lastWatchedAt ?? null,
   };
 };
 
@@ -59,34 +62,20 @@ export const getEpisodeWatchStatusMap = async (
   tmdbId: number,
   seasonNumber?: number
 ) => {
-  const where = {
-    episodeNumber: Not(IsNull()),
-    mediaType: MediaType.TV,
-    tmdbId,
-    userId,
-  } as const;
-
-  const rows = await getRepository(TraktHistory).find({
-    order: { watchedAt: 'DESC', id: 'DESC' },
+  const rows = await getRepository(TraktWatchedEpisode).find({
+    order: { lastWatchedAt: 'DESC', id: 'DESC' },
     where:
       seasonNumber != null
-        ? {
-            ...where,
-            seasonNumber,
-          }
-        : where,
+        ? { seasonNumber, tmdbId, userId }
+        : { tmdbId, userId },
   });
 
   const map = new Map<string, Date>();
 
   for (const row of rows) {
-    if (row.seasonNumber == null || row.episodeNumber == null) {
-      continue;
-    }
-
     const key = `${row.seasonNumber}:${row.episodeNumber}`;
     if (!map.has(key)) {
-      map.set(key, row.watchedAt);
+      map.set(key, row.lastWatchedAt);
     }
   }
 
@@ -99,24 +88,33 @@ export const getSeasonWatchStatus = async (
   episodes: EligibleEpisode[],
   seasonNumber: number
 ): Promise<SeasonWatchedStatus> => {
-  const episodeMap = await getEpisodeWatchStatusMap(userId, tmdbId, seasonNumber);
+  const episodeMap = await getEpisodeWatchStatusMap(
+    userId,
+    tmdbId,
+    seasonNumber
+  );
   const eligibleEpisodes = episodes.filter(isEligibleBulkEpisode);
   const watchedEpisodes = eligibleEpisodes.filter((episode) =>
     episodeMap.has(`${episode.seasonNumber}:${episode.episodeNumber}`)
   );
   const watchedAt =
-    watchedEpisodes.length === eligibleEpisodes.length && eligibleEpisodes.length
+    watchedEpisodes.length === eligibleEpisodes.length &&
+    eligibleEpisodes.length
       ? watchedEpisodes
           .map(
             (episode) =>
-              episodeMap.get(`${episode.seasonNumber}:${episode.episodeNumber}`)!
+              episodeMap.get(
+                `${episode.seasonNumber}:${episode.episodeNumber}`
+              )!
           )
           .sort((left, right) => right.getTime() - left.getTime())[0]
       : null;
 
   return {
     eligibleEpisodeCount: eligibleEpisodes.length,
-    watched: eligibleEpisodes.length > 0 && watchedEpisodes.length === eligibleEpisodes.length,
+    watched:
+      eligibleEpisodes.length > 0 &&
+      watchedEpisodes.length === eligibleEpisodes.length,
     watchedAt,
     watchedEpisodeCount: watchedEpisodes.length,
   };
@@ -132,7 +130,8 @@ export const getEpisodeWatchStatuses = async (
 
   for (const episode of episodes) {
     const watchedAt =
-      episodeMap.get(`${episode.seasonNumber}:${episode.episodeNumber}`) ?? null;
+      episodeMap.get(`${episode.seasonNumber}:${episode.episodeNumber}`) ??
+      null;
 
     result.set(`${episode.seasonNumber}:${episode.episodeNumber}`, {
       airDate: episode.airDate,
@@ -154,7 +153,9 @@ export const getShowWatchStatus = async (
   const watchedEpisodes = eligibleEpisodes.filter((episode) =>
     episodeMap.has(`${episode.seasonNumber}:${episode.episodeNumber}`)
   );
-  const seasonNumbers = [...new Set(eligibleEpisodes.map((episode) => episode.seasonNumber))];
+  const seasonNumbers = [
+    ...new Set(eligibleEpisodes.map((episode) => episode.seasonNumber)),
+  ];
   const watchedSeasonCount = seasonNumbers.filter((candidateSeasonNumber) => {
     const seasonEpisodes = eligibleEpisodes.filter(
       (episode) => episode.seasonNumber === candidateSeasonNumber
@@ -168,11 +169,14 @@ export const getShowWatchStatus = async (
     );
   }).length;
   const watchedAt =
-    watchedEpisodes.length === eligibleEpisodes.length && eligibleEpisodes.length
+    watchedEpisodes.length === eligibleEpisodes.length &&
+    eligibleEpisodes.length
       ? watchedEpisodes
           .map(
             (episode) =>
-              episodeMap.get(`${episode.seasonNumber}:${episode.episodeNumber}`)!
+              episodeMap.get(
+                `${episode.seasonNumber}:${episode.episodeNumber}`
+              )!
           )
           .sort((left, right) => right.getTime() - left.getTime())[0]
       : null;
@@ -180,7 +184,9 @@ export const getShowWatchStatus = async (
   return {
     eligibleEpisodeCount: eligibleEpisodes.length,
     eligibleSeasonCount: seasonNumbers.length,
-    watched: eligibleEpisodes.length > 0 && watchedEpisodes.length === eligibleEpisodes.length,
+    watched:
+      eligibleEpisodes.length > 0 &&
+      watchedEpisodes.length === eligibleEpisodes.length,
     watchedAt,
     watchedEpisodeCount: watchedEpisodes.length,
     watchedSeasonCount,

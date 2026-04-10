@@ -14,6 +14,7 @@ import { sonarrScanner } from '@server/lib/scanners/sonarr';
 import type { JobId } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { syncTraktHistoryForEnabledUsers } from '@server/lib/traktHistory';
+import { syncTraktWatchStateForLinkedUsers } from '@server/lib/traktWatched';
 import { syncTraktWatchlistForEnabledUsers } from '@server/lib/traktWatchlist';
 import watchlistSync from '@server/lib/watchlistsync';
 import logger from '@server/logger';
@@ -151,20 +152,34 @@ export const startJobs = (): void => {
 
   scheduledJobs.push({
     id: 'trakt-history-sync',
-    name: 'Trakt Watch History Sync',
+    name: 'Trakt Watched State & History Sync',
     type: 'process',
     interval: 'hours',
     cronSchedule: jobs['trakt-history-sync'].schedule,
-    job: schedule.scheduleJob(jobs['trakt-history-sync'].schedule, () => {
-      logger.info('Starting scheduled job: Trakt Watch History Sync', {
-        label: 'Jobs',
-      });
-      syncTraktHistoryForEnabledUsers().catch((e) => {
+    job: schedule.scheduleJob(jobs['trakt-history-sync'].schedule, async () => {
+      logger.info(
+        'Starting scheduled job: Trakt Watched State & History Sync',
+        {
+          label: 'Jobs',
+        }
+      );
+      try {
+        await syncTraktWatchStateForLinkedUsers();
+      } catch (e) {
+        logger.error('Failed to sync Trakt watched state', {
+          errorMessage: e.message,
+          label: 'Trakt Watch State',
+        });
+      }
+
+      try {
+        await syncTraktHistoryForEnabledUsers();
+      } catch (e) {
         logger.error('Failed to sync Trakt watch history', {
           errorMessage: e.message,
           label: 'Trakt History',
         });
-      });
+      }
     }),
   });
 

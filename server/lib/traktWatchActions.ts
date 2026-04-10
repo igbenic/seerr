@@ -2,7 +2,6 @@ import type { TraktHistorySyncResponse } from '@server/api/trakt';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import { TraktHistory } from '@server/entity/TraktHistory';
-import { UserSettings } from '@server/entity/UserSettings';
 import type { WatchMutationResponse } from '@server/interfaces/api/traktWatchInterfaces';
 import { createTraktApiForUser } from '@server/lib/trakt';
 import {
@@ -10,6 +9,12 @@ import {
   isEligibleBulkEpisode,
   isEligibleSingleEpisode,
 } from '@server/lib/traktWatchState';
+import {
+  deleteEpisodeWatchStateEntries,
+  deleteMovieWatchState,
+  upsertEpisodeWatchStateEntries,
+  upsertMovieWatchState,
+} from '@server/lib/traktWatched';
 import { IsNull } from 'typeorm';
 
 type EligibleEpisode = {
@@ -44,26 +49,6 @@ const getManualHistoryIds = async (userId: number, count: number) => {
   return Array.from({ length: count }, () => nextHistoryId--);
 };
 
-const updateLatestWatchedAt = async (userId: number) => {
-  const settingsRepository = getRepository(UserSettings);
-  const settings = await settingsRepository.findOne({
-    relations: ['user'],
-    where: { user: { id: userId } },
-  });
-
-  if (!settings) {
-    return;
-  }
-
-  const latestImported = await getRepository(TraktHistory).findOne({
-    order: { watchedAt: 'DESC', id: 'DESC' },
-    where: { userId },
-  });
-
-  settings.traktHistoryLatestWatchedAt = latestImported?.watchedAt ?? null;
-  await settingsRepository.save(settings);
-};
-
 const ensureTraktApi = async (userId: number) => {
   const traktApi = await createTraktApiForUser(userId);
 
@@ -84,12 +69,14 @@ const normalizeSyncResult = (
 const persistMovieWatch = async ({
   ids,
   title,
+  tmdbId,
   userId,
   watchedAt,
   year,
 }: {
   ids: TraktMovieIds;
   title: string;
+  tmdbId: number;
   userId: number;
   watchedAt: Date;
   year?: number | null;
@@ -103,20 +90,28 @@ const persistMovieWatch = async ({
       mediaType: MediaType.MOVIE,
       source: 'trakt',
       title,
-      tmdbId: ids.tmdb,
+      tmdbId,
       traktId: ids.trakt,
       userId,
       watchedAt,
       year,
     })
   );
-  await updateLatestWatchedAt(userId);
+  await upsertMovieWatchState({
+    ids,
+    title,
+    tmdbId,
+    userId,
+    watchedAt,
+    year,
+  });
 };
 
 const persistEpisodeWatchEntries = async ({
   episodes,
   ids,
   title,
+  tmdbId,
   userId,
   watchedAt,
   year,
@@ -124,6 +119,7 @@ const persistEpisodeWatchEntries = async ({
   episodes: EligibleEpisode[];
   ids: TraktShowIds;
   title: string;
+  tmdbId: number;
   userId: number;
   watchedAt: Date;
   year?: number | null;
@@ -142,7 +138,7 @@ const persistEpisodeWatchEntries = async ({
           seasonNumber: episode.seasonNumber,
           source: 'trakt',
           title,
-          tmdbId: ids.tmdb,
+          tmdbId,
           traktId: ids.trakt,
           tvdbId: ids.tvdb,
           userId,
@@ -151,7 +147,18 @@ const persistEpisodeWatchEntries = async ({
         })
     )
   );
-  await updateLatestWatchedAt(userId);
+  await upsertEpisodeWatchStateEntries({
+    episodes: episodes.map((episode) => ({
+      episodeNumber: episode.episodeNumber,
+      seasonNumber: episode.seasonNumber,
+    })),
+    ids,
+    title,
+    tmdbId,
+    userId,
+    watchedAt,
+    year,
+  });
 };
 
 const buildShowPayload = ({
@@ -208,7 +215,14 @@ const deleteEpisodeHistory = async ({
   }));
 
   await getRepository(TraktHistory).delete(conditions);
-  await updateLatestWatchedAt(userId);
+  await deleteEpisodeWatchStateEntries({
+    episodes: episodes.map((episode) => ({
+      episodeNumber: episode.episodeNumber,
+      seasonNumber: episode.seasonNumber,
+    })),
+    tmdbId,
+    userId,
+  });
 };
 
 export const markMovieWatched = async ({
@@ -242,6 +256,7 @@ export const markMovieWatched = async ({
   await persistMovieWatch({
     ids: { ...ids, tmdb: tmdbId },
     title,
+    tmdbId,
     userId,
     watchedAt,
     year,
@@ -277,7 +292,7 @@ export const markMovieUnwatched = async ({
     tmdbId,
     userId,
   });
-  await updateLatestWatchedAt(userId);
+  await deleteMovieWatchState({ tmdbId, userId });
 
   return normalizeSyncResult(result);
 };
@@ -325,6 +340,7 @@ export const markEpisodeWatched = async ({
     episodes: [episode],
     ids: { ...ids, tmdb: tmdbId },
     title,
+    tmdbId,
     userId,
     watchedAt,
     year,
@@ -425,6 +441,7 @@ export const markSeasonWatched = async ({
     episodes: eligibleEpisodes,
     ids: { ...ids, tmdb: tmdbId },
     title,
+    tmdbId,
     userId,
     watchedAt,
     year,
@@ -524,6 +541,7 @@ export const markShowWatched = async ({
     episodes: eligibleEpisodes,
     ids: { ...ids, tmdb: tmdbId },
     title,
+    tmdbId,
     userId,
     watchedAt,
     year,

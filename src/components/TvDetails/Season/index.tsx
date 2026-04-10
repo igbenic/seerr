@@ -1,4 +1,5 @@
 import AirDateBadge from '@app/components/AirDateBadge';
+import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
@@ -19,6 +20,8 @@ const messages = defineMessages('components.TvDetails.Season', {
   markSeasonWatched: 'Mark Season Watched',
   markSeasonUnwatched: 'Mark Season Unwatched',
   watchUpdateError: 'Unable to update watched status.',
+  watched: 'Watched',
+  watchedProgress: '{watchedEpisodeCount}/{eligibleEpisodeCount} watched',
 });
 
 type SeasonProps = {
@@ -37,9 +40,7 @@ const Season = ({ seasonNumber, tvId, onUpdate }: SeasonProps) => {
     data,
     error,
     mutate: revalidate,
-  } = useSWR<SeasonWithEpisodes>(
-    `/api/v1/tv/${tvId}/season/${seasonNumber}`
-  );
+  } = useSWR<SeasonWithEpisodes>(`/api/v1/tv/${tvId}/season/${seasonNumber}`);
 
   const syncViews = async () => {
     await revalidate();
@@ -113,7 +114,21 @@ const Season = ({ seasonNumber, tvId, onUpdate }: SeasonProps) => {
   return (
     <div className="flex flex-col justify-center divide-y divide-gray-700">
       {user?.traktUsername && data.userWatchStatus?.eligibleEpisodeCount ? (
-        <div className="flex justify-end py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 py-4">
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              badgeType={data.userWatchStatus.watched ? 'success' : 'primary'}
+            >
+              {data.userWatchStatus.watched
+                ? intl.formatMessage(messages.watched)
+                : intl.formatMessage(messages.watchedProgress, {
+                    eligibleEpisodeCount:
+                      data.userWatchStatus.eligibleEpisodeCount,
+                    watchedEpisodeCount:
+                      data.userWatchStatus.watchedEpisodeCount,
+                  })}
+            </Badge>
+          </div>
           <Button
             buttonType={data.userWatchStatus.watched ? 'primary' : 'ghost'}
             buttonSize="sm"
@@ -138,7 +153,9 @@ const Season = ({ seasonNumber, tvId, onUpdate }: SeasonProps) => {
           .map((episode) => {
             return (
               <div
-                className="flex flex-col space-y-4 py-4 xl:flex-row xl:space-x-4 xl:space-y-4"
+                className={`flex flex-col space-y-4 py-4 xl:flex-row xl:space-x-4 xl:space-y-4 ${
+                  episode.userWatchStatus?.watched ? 'bg-green-500/5' : ''
+                }`}
                 key={`season-${seasonNumber}-episode-${episode.episodeNumber}`}
               >
                 <div className="flex-1">
@@ -149,28 +166,40 @@ const Season = ({ seasonNumber, tvId, onUpdate }: SeasonProps) => {
                     {episode.airDate && (
                       <AirDateBadge airDate={episode.airDate} />
                     )}
-                    {user?.traktUsername && isAired(episode.userWatchStatus?.airDate) && (
-                      <Button
-                        buttonType={
-                          episode.userWatchStatus?.watched ? 'primary' : 'ghost'
-                        }
-                        buttonSize="sm"
-                        onClick={() =>
-                          updateEpisodeWatchStatus(
-                            episode.episodeNumber,
-                            !!episode.userWatchStatus?.watched
-                          )
-                        }
+                    {episode.userWatchStatus?.watched && (
+                      <div
+                        data-testid={`episode-watched-badge-${episode.episodeNumber}`}
                       >
-                        {updatingEpisode === episode.episodeNumber
-                          ? '...'
-                          : intl.formatMessage(
-                              episode.userWatchStatus?.watched
-                                ? messages.markUnwatched
-                                : messages.markWatched
-                            )}
-                      </Button>
+                        <Badge badgeType="success">
+                          {intl.formatMessage(messages.watched)}
+                        </Badge>
+                      </div>
                     )}
+                    {user?.traktUsername &&
+                      isAired(episode.userWatchStatus?.airDate) && (
+                        <Button
+                          buttonType={
+                            episode.userWatchStatus?.watched
+                              ? 'primary'
+                              : 'ghost'
+                          }
+                          buttonSize="sm"
+                          onClick={() =>
+                            updateEpisodeWatchStatus(
+                              episode.episodeNumber,
+                              !!episode.userWatchStatus?.watched
+                            )
+                          }
+                        >
+                          {updatingEpisode === episode.episodeNumber
+                            ? '...'
+                            : intl.formatMessage(
+                                episode.userWatchStatus?.watched
+                                  ? messages.markUnwatched
+                                  : messages.markWatched
+                              )}
+                        </Button>
+                      )}
                   </div>
                   {episode.overview && <p>{episode.overview}</p>}
                 </div>

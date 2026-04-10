@@ -7,6 +7,7 @@ import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
+import type { SeasonWatchedStatus } from '@server/interfaces/api/traktWatchInterfaces';
 import {
   markEpisodeUnwatched,
   markEpisodeWatched,
@@ -21,11 +22,11 @@ import {
   getShowSeasonData,
   getShowWatchStatus,
 } from '@server/lib/traktWatchState';
+import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { mapTvResult } from '@server/models/Search';
 import { mapSeasonWithEpisodes, mapTvDetails } from '@server/models/Tv';
-import type { SeasonWatchedStatus } from '@server/interfaces/api/traktWatchInterfaces';
 import { Router } from 'express';
 
 const tvRoutes = Router();
@@ -44,9 +45,10 @@ const getMetadataProviderForShow = async (tvId: number) => {
 };
 
 tvRoutes.get('/:id', async (req, res, next) => {
-  const tmdb = new TheMovieDb();
-
   try {
+    const traktWatchStateEnabled =
+      !!req.user?.traktUsername && !!req.user.settings?.traktHistorySyncEnabled;
+    const userId = req.user?.id;
     const metadataProvider = await getMetadataProviderForShow(
       Number(req.params.id)
     );
@@ -66,7 +68,13 @@ tvRoutes.get('/:id', async (req, res, next) => {
       },
     });
 
-    const seasons = req.user ? await getShowSeasonData(tv.id, req.locale) : [];
+    if (req.user && traktWatchStateEnabled) {
+      await ensureFreshTraktWatchState(req.user.id);
+    }
+
+    const seasons = traktWatchStateEnabled
+      ? await getShowSeasonData(tv.id, req.locale)
+      : [];
     const eligibleEpisodes = seasons.flatMap((season) =>
       season.episodes.map((episode) => ({
         airDate: episode.airDate,
@@ -75,8 +83,8 @@ tvRoutes.get('/:id', async (req, res, next) => {
         seasonNumber: episode.seasonNumber,
       }))
     );
-    const userWatchStatus = req.user
-      ? await getShowWatchStatus(req.user.id, tv.id, eligibleEpisodes)
+    const userWatchStatus = traktWatchStateEnabled
+      ? await getShowWatchStatus(userId!, tv.id, eligibleEpisodes)
       : undefined;
     const seasonWatchStatuses = new Map<number, SeasonWatchedStatus>(
       await Promise.all(
@@ -84,7 +92,7 @@ tvRoutes.get('/:id', async (req, res, next) => {
           async (season): Promise<[number, SeasonWatchedStatus]> => [
             season.seasonNumber,
             await getSeasonWatchStatus(
-              req.user!.id,
+              userId!,
               tv.id,
               season.episodes.map((episode) => ({
                 airDate: episode.airDate,
@@ -103,7 +111,7 @@ tvRoutes.get('/:id', async (req, res, next) => {
       media,
       onUserWatchlist,
       userWatchStatus,
-      req.user ? seasonWatchStatuses : undefined
+      traktWatchStateEnabled ? seasonWatchStatuses : undefined
     );
 
     // TMDB issue where it doesnt fallback to English when no overview is available in requested locale.
@@ -130,6 +138,14 @@ tvRoutes.get('/:id', async (req, res, next) => {
 
 tvRoutes.get('/:id/season/:seasonNumber', async (req, res, next) => {
   try {
+    const traktWatchStateEnabled =
+      !!req.user?.traktUsername && !!req.user.settings?.traktHistorySyncEnabled;
+    const userId = req.user?.id;
+
+    if (req.user && traktWatchStateEnabled) {
+      await ensureFreshTraktWatchState(req.user.id);
+    }
+
     const metadataProvider = await getMetadataProviderForShow(
       Number(req.params.id)
     );
@@ -145,16 +161,16 @@ tvRoutes.get('/:id/season/:seasonNumber', async (req, res, next) => {
       name: episode.name,
       seasonNumber: episode.season_number,
     }));
-    const episodeWatchStatuses = req.user
+    const episodeWatchStatuses = traktWatchStateEnabled
       ? await getEpisodeWatchStatuses(
-          req.user.id,
+          userId!,
           Number(req.params.id),
           eligibleEpisodes
         )
       : undefined;
-    const seasonWatchStatus = req.user
+    const seasonWatchStatus = traktWatchStateEnabled
       ? await getSeasonWatchStatus(
-          req.user.id,
+          userId!,
           Number(req.params.id),
           eligibleEpisodes,
           Number(req.params.seasonNumber)
@@ -181,7 +197,9 @@ tvRoutes.get('/:id/season/:seasonNumber', async (req, res, next) => {
 });
 
 tvRoutes.post('/:id/watch', isAuthenticated(), async (req, res, next) => {
-  const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+  const metadataProvider = await getMetadataProviderForShow(
+    Number(req.params.id)
+  );
 
   try {
     if (!req.user) {
@@ -202,20 +220,25 @@ tvRoutes.post('/:id/watch', isAuthenticated(), async (req, res, next) => {
       title: show.name,
       tmdbId: show.id,
       userId: req.user.id,
-      year: show.first_air_date ? Number(show.first_air_date.slice(0, 4)) : null,
+      year: show.first_air_date
+        ? Number(show.first_air_date.slice(0, 4))
+        : null,
     });
 
     return res.status(200).json(response);
   } catch (error) {
     return next({
       status: 500,
-      message: error instanceof Error ? error.message : 'Unable to mark watched.',
+      message:
+        error instanceof Error ? error.message : 'Unable to mark watched.',
     });
   }
 });
 
 tvRoutes.delete('/:id/watch', isAuthenticated(), async (req, res, next) => {
-  const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+  const metadataProvider = await getMetadataProviderForShow(
+    Number(req.params.id)
+  );
 
   try {
     if (!req.user) {
@@ -251,7 +274,9 @@ tvRoutes.post(
   '/:id/season/:seasonNumber/watch',
   isAuthenticated(),
   async (req, res, next) => {
-    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+    const metadataProvider = await getMetadataProviderForShow(
+      Number(req.params.id)
+    );
 
     try {
       if (!req.user) {
@@ -293,7 +318,9 @@ tvRoutes.delete(
   '/:id/season/:seasonNumber/watch',
   isAuthenticated(),
   async (req, res, next) => {
-    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+    const metadataProvider = await getMetadataProviderForShow(
+      Number(req.params.id)
+    );
 
     try {
       if (!req.user) {
@@ -331,7 +358,9 @@ tvRoutes.post(
   '/:id/season/:seasonNumber/episode/:episodeNumber/watch',
   isAuthenticated(),
   async (req, res, next) => {
-    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+    const metadataProvider = await getMetadataProviderForShow(
+      Number(req.params.id)
+    );
 
     try {
       if (!req.user) {
@@ -389,7 +418,9 @@ tvRoutes.delete(
   '/:id/season/:seasonNumber/episode/:episodeNumber/watch',
   isAuthenticated(),
   async (req, res, next) => {
-    const metadataProvider = await getMetadataProviderForShow(Number(req.params.id));
+    const metadataProvider = await getMetadataProviderForShow(
+      Number(req.params.id)
+    );
 
     try {
       if (!req.user) {

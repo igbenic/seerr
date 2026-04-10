@@ -83,17 +83,23 @@ const messages = defineMessages(
     hideWatched: 'Hide Watched Trakt Titles',
     hideWatchedTip:
       'Hide titles you have already watched on Trakt from Trakt-powered recommendations and watchlists.',
-    traktHistorySync: 'Sync Trakt Watch History',
+    traktHistorySync: 'Sync Trakt Watched State & History',
     traktHistorySyncTip:
-      'Import your full Trakt watch history into Seerr and keep it updated in the background.',
+      'Cache your Trakt watched state for detail pages and import watch history for activity views.',
     traktHistorySyncNow: 'Sync Now',
-    traktHistoryImported: '{count} imported',
+    traktHistoryForceResync: 'Full Resync',
+    traktHistoryImported: '{count} history items imported',
     traktHistoryStatusConnected: 'Linked Trakt account required for sync.',
     traktHistoryStatusLastSuccess: 'Last successful sync',
     traktHistoryStatusLastAttempt: 'Last attempted sync',
     traktHistoryStatusLatest: 'Latest imported watch',
-    traktHistorySyncSuccess: 'Trakt history sync completed.',
-    traktHistorySyncFailure: 'Unable to sync Trakt history.',
+    traktWatchStateStatus: 'Watched-state cache',
+    traktWatchStateStatusReady: 'Ready',
+    traktWatchStateStatusPending: 'Initial bootstrap pending',
+    traktWatchStateStatusLastSuccess: 'Watched-state last successful sync',
+    traktWatchStateStatusLastAttempt: 'Watched-state last attempted sync',
+    traktHistorySyncSuccess: 'Trakt watched-state and history sync completed.',
+    traktHistorySyncFailure: 'Unable to sync Trakt watched-state and history.',
     traktWatchlistSync: 'Sync Trakt Watchlist',
     traktWatchlistSyncTip:
       'Mirror your Trakt watchlist into Seerr and keep it updated locally for faster access.',
@@ -131,19 +137,16 @@ const UserGeneralSettings = () => {
   } = useSWR<UserSettingsGeneralResponse>(
     user ? `/api/v1/user/${user?.id}/settings/main` : null
   );
-  const {
-    data: traktHistoryStatus,
-    mutate: revalidateTraktHistoryStatus,
-  } = useSWR<TraktHistoryStatusResponse>(
-    user ? `/api/v1/user/${user?.id}/settings/trakt-history` : null
-  );
-  const {
-    data: traktWatchlistStatus,
-    mutate: revalidateTraktWatchlistStatus,
-  } = useSWR<TraktWatchlistStatusResponse>(
-    user ? `/api/v1/user/${user?.id}/settings/trakt-watchlist` : null
-  );
-  const hasMediaServerEmailFallback = !!user?.jellyfinUsername || !!user?.plexUsername;
+  const { data: traktHistoryStatus, mutate: revalidateTraktHistoryStatus } =
+    useSWR<TraktHistoryStatusResponse>(
+      user ? `/api/v1/user/${user?.id}/settings/trakt-history` : null
+    );
+  const { data: traktWatchlistStatus, mutate: revalidateTraktWatchlistStatus } =
+    useSWR<TraktWatchlistStatusResponse>(
+      user ? `/api/v1/user/${user?.id}/settings/trakt-watchlist` : null
+    );
+  const hasMediaServerEmailFallback =
+    !!user?.jellyfinUsername || !!user?.plexUsername;
   const requiresExplicitEmail =
     user?.id === 1
       ? !hasMediaServerEmailFallback
@@ -151,22 +154,20 @@ const UserGeneralSettings = () => {
         user?.userType !== UserType.EMBY;
 
   const UserGeneralSettingsSchema = Yup.object().shape({
-    email:
-      requiresExplicitEmail
-        ? Yup.string()
-            .test(
-              'email',
-              intl.formatMessage(messages.validationemailformat),
-              (value) =>
-                !value || validator.isEmail(value, { require_tld: false })
-            )
-            .required(intl.formatMessage(messages.validationemailrequired))
-        : Yup.string().test(
+    email: requiresExplicitEmail
+      ? Yup.string()
+          .test(
             'email',
             intl.formatMessage(messages.validationemailformat),
             (value) =>
               !value || validator.isEmail(value, { require_tld: false })
-          ),
+          )
+          .required(intl.formatMessage(messages.validationemailrequired))
+      : Yup.string().test(
+          'email',
+          intl.formatMessage(messages.validationemailformat),
+          (value) => !value || validator.isEmail(value, { require_tld: false })
+        ),
     discordId: Yup.string()
       .nullable()
       .test(
@@ -192,6 +193,27 @@ const UserGeneralSettings = () => {
   if (!data) {
     return <ErrorPage statusCode={500} />;
   }
+
+  const formatDateTime = (value?: Date | string | null) => {
+    if (!value) {
+      return '—';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return '—';
+    }
+
+    return `${intl.formatDate(date, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })} ${intl.formatTime(date, {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`;
+  };
 
   return (
     <>
@@ -747,12 +769,9 @@ const UserGeneralSettings = () => {
                     <div className="form-input-area">
                       <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
                         <div className="text-sm text-gray-200">
-                          {intl.formatMessage(
-                            messages.traktWatchlistImported,
-                            {
-                              count: traktWatchlistStatus?.totalItems ?? 0,
-                            }
-                          )}
+                          {intl.formatMessage(messages.traktWatchlistImported, {
+                            count: traktWatchlistStatus?.totalItems ?? 0,
+                          })}
                         </div>
                         <div className="mt-2 text-sm text-gray-400">
                           {traktWatchlistStatus?.traktConnected
@@ -837,7 +856,7 @@ const UserGeneralSettings = () => {
                                   response.data,
                                   false
                                 );
-                              } catch (e) {
+                              } catch {
                                 addToast(
                                   intl.formatMessage(
                                     messages.traktWatchlistSyncFailure
@@ -866,7 +885,9 @@ const UserGeneralSettings = () => {
                       htmlFor="traktHistorySyncEnabled"
                       className="checkbox-label"
                     >
-                      <span>{intl.formatMessage(messages.traktHistorySync)}</span>
+                      <span>
+                        {intl.formatMessage(messages.traktHistorySync)}
+                      </span>
                       <span className="label-tip">
                         {intl.formatMessage(messages.traktHistorySyncTip)}
                       </span>
@@ -901,76 +922,73 @@ const UserGeneralSettings = () => {
                                 messages.traktHistoryStatusLastSuccess
                               ) +
                               ': ' +
-                              (traktHistoryStatus?.lastSuccessfulSyncAt
-                                ? `${intl.formatDate(
-                                    traktHistoryStatus.lastSuccessfulSyncAt,
-                                    {
-                                      day: '2-digit',
-                                      month: 'short',
-                                      year: 'numeric',
-                                    }
-                                  )} ${intl.formatTime(
-                                    traktHistoryStatus.lastSuccessfulSyncAt,
-                                    {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    }
-                                  )}`
-                                : '—')
+                              formatDateTime(
+                                traktHistoryStatus?.lastSuccessfulSyncAt
+                              )
                             : intl.formatMessage(
                                 messages.traktHistoryStatusConnected
                               )}
                         </div>
                         <div className="mt-1 text-sm text-gray-400">
-                          {intl.formatMessage(messages.traktHistoryStatusLastAttempt)}
+                          {intl.formatMessage(
+                            messages.traktHistoryStatusLastAttempt
+                          )}
                           :{' '}
-                          {traktHistoryStatus?.lastAttemptedSyncAt
-                            ? `${intl.formatDate(
-                                traktHistoryStatus.lastAttemptedSyncAt,
-                                {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                }
-                              )} ${intl.formatTime(
-                                traktHistoryStatus.lastAttemptedSyncAt,
-                                {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                }
-                              )}`
-                            : '—'}
+                          {formatDateTime(
+                            traktHistoryStatus?.lastAttemptedSyncAt
+                          )}
                         </div>
                         <div className="mt-1 text-sm text-gray-400">
-                          {intl.formatMessage(messages.traktHistoryStatusLatest)}
+                          {intl.formatMessage(
+                            messages.traktHistoryStatusLatest
+                          )}
                           :{' '}
-                          {traktHistoryStatus?.latestImportedWatchedAt
-                            ? `${intl.formatDate(
-                                traktHistoryStatus.latestImportedWatchedAt,
-                                {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                }
-                              )} ${intl.formatTime(
-                                traktHistoryStatus.latestImportedWatchedAt,
-                                {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                }
-                              )}`
-                            : '—'}
+                          {formatDateTime(
+                            traktHistoryStatus?.latestImportedWatchedAt
+                          )}
                         </div>
-                        <div className="mt-4">
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(messages.traktWatchStateStatus)}:{' '}
+                          {traktHistoryStatus?.watchStateBootstrapped
+                            ? intl.formatMessage(
+                                messages.traktWatchStateStatusReady
+                              )
+                            : intl.formatMessage(
+                                messages.traktWatchStateStatusPending
+                              )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.traktWatchStateStatusLastSuccess
+                          )}
+                          :{' '}
+                          {formatDateTime(
+                            traktHistoryStatus?.watchStateLastSuccessfulSyncAt
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.traktWatchStateStatusLastAttempt
+                          )}
+                          :{' '}
+                          {formatDateTime(
+                            traktHistoryStatus?.watchStateLastAttemptedSyncAt
+                          )}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-3">
                           <Button
                             buttonType="ghost"
                             type="button"
-                            disabled={!traktHistoryStatus?.traktConnected}
+                            disabled={
+                              !traktHistoryStatus?.traktConnected ||
+                              !values.traktHistorySyncEnabled
+                            }
                             onClick={async () => {
                               try {
-                                const response = await axios.post<TraktHistoryStatusResponse>(
-                                  `/api/v1/user/${user?.id}/settings/trakt-history/sync`
-                                );
+                                const response =
+                                  await axios.post<TraktHistoryStatusResponse>(
+                                    `/api/v1/user/${user?.id}/settings/trakt-history/sync`
+                                  );
                                 addToast(
                                   `${intl.formatMessage(
                                     messages.traktHistorySyncSuccess
@@ -985,8 +1003,11 @@ const UserGeneralSettings = () => {
                                     autoDismiss: true,
                                   }
                                 );
-                                revalidateTraktHistoryStatus(response.data, false);
-                              } catch (e) {
+                                revalidateTraktHistoryStatus(
+                                  response.data,
+                                  false
+                                );
+                              } catch {
                                 addToast(
                                   intl.formatMessage(
                                     messages.traktHistorySyncFailure
@@ -1002,6 +1023,54 @@ const UserGeneralSettings = () => {
                             <ArrowPathIcon className="mr-2 h-5 w-5" />
                             <span>
                               {intl.formatMessage(messages.traktHistorySyncNow)}
+                            </span>
+                          </Button>
+                          <Button
+                            buttonType="ghost"
+                            type="button"
+                            disabled={!traktHistoryStatus?.traktConnected}
+                            onClick={async () => {
+                              try {
+                                const response =
+                                  await axios.post<TraktHistoryStatusResponse>(
+                                    `/api/v1/user/${user?.id}/settings/trakt-history/sync?forceFull=1`
+                                  );
+                                addToast(
+                                  `${intl.formatMessage(
+                                    messages.traktHistorySyncSuccess
+                                  )} ${intl.formatMessage(
+                                    messages.traktHistoryImported,
+                                    {
+                                      count: response.data.totalItems ?? 0,
+                                    }
+                                  )}`,
+                                  {
+                                    appearance: 'success',
+                                    autoDismiss: true,
+                                  }
+                                );
+                                revalidateTraktHistoryStatus(
+                                  response.data,
+                                  false
+                                );
+                              } catch {
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.traktHistorySyncFailure
+                                  ),
+                                  {
+                                    appearance: 'error',
+                                    autoDismiss: true,
+                                  }
+                                );
+                              }
+                            }}
+                          >
+                            <ArrowPathIcon className="mr-2 h-5 w-5" />
+                            <span>
+                              {intl.formatMessage(
+                                messages.traktHistoryForceResync
+                              )}
                             </span>
                           </Button>
                         </div>

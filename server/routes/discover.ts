@@ -1,7 +1,10 @@
 import PlexTvAPI from '@server/api/plextv';
 import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
-import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
+import type {
+  TmdbKeyword,
+  TmdbSearchMultiResponse,
+} from '@server/api/themoviedb/interfaces';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
@@ -13,6 +16,7 @@ import type {
 } from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
 import { getTraktRecommendations } from '@server/lib/trakt';
+import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import { getTraktWatchlist } from '@server/lib/traktWatchlist';
 import logger from '@server/logger';
 import { mapProductionCompany } from '@server/models/Movie';
@@ -710,37 +714,59 @@ discoverRoutes.get('/trending', async (req, res, next) => {
       (req.query.timeWindow as 'day' | 'week') === 'week' ? 'week' : 'day';
     const language = (req.query.language as string) ?? req.locale;
     const page = Number(req.query.page);
+    if (mediaType === 'movie') {
+      const data = await tmdb.getMovieTrending({ page, language, timeWindow });
+      const media = await Media.getRelatedMedia(
+        req.user,
+        data.results.map((result) => ({
+          tmdbId: result.id,
+          mediaType: MediaType.MOVIE,
+        }))
+      );
 
-    const trendingFetchers = {
-      movie: async () => ({
-        data: await tmdb.getMovieTrending({ page, language, timeWindow }),
-        mapper: mapMovieResult,
-        type: MediaType.MOVIE,
-      }),
-      tv: async () => ({
-        data: await tmdb.getTvTrending({ page, language, timeWindow }),
-        mapper: mapTvResult,
-        type: MediaType.TV,
-      }),
-      all: async () => ({
-        data: await tmdb.getAllTrending({ page, language, timeWindow }),
-        mapper: (result: any, media?: Media) => {
-          if (isMovie(result)) {
-            return mapMovieResult(result, media);
-          } else if (isPerson(result)) {
-            return mapPersonResult(result);
-          } else if (isCollection(result)) {
-            return mapCollectionResult(result);
-          } else {
-            return mapTvResult(result, media);
-          }
-        },
-        type: null,
-      }),
-    } as const;
+      return res.status(200).json({
+        page: data.page,
+        totalPages: data.total_pages,
+        totalResults: data.total_results,
+        results: data.results.map((result) =>
+          mapMovieResult(
+            result,
+            media.find(
+              (med) =>
+                med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+            )
+          )
+        ),
+      });
+    }
 
-    const { data, mapper, type } = await trendingFetchers[mediaType]();
+    if (mediaType === 'tv') {
+      const data = await tmdb.getTvTrending({ page, language, timeWindow });
+      const media = await Media.getRelatedMedia(
+        req.user,
+        data.results.map((result) => ({
+          tmdbId: result.id,
+          mediaType: MediaType.TV,
+        }))
+      );
 
+      return res.status(200).json({
+        page: data.page,
+        totalPages: data.total_pages,
+        totalResults: data.total_results,
+        results: data.results.map((result) =>
+          mapTvResult(
+            result,
+            media.find(
+              (med) =>
+                med.tmdbId === result.id && med.mediaType === MediaType.TV
+            )
+          )
+        ),
+      });
+    }
+
+    const data = await tmdb.getAllTrending({ page, language, timeWindow });
     const media = await Media.getRelatedMedia(
       req.user,
       data.results.map((result) => ({
@@ -753,16 +779,21 @@ discoverRoutes.get('/trending', async (req, res, next) => {
       page: data.page,
       totalPages: data.total_pages,
       totalResults: data.total_results,
-      results: data.results.map((result) => {
-        // - If "type" is set (case: "movie" or "tv"), the mediaType must also match.
-        // - If "type" is not set (case: "all"), only filter by tmdbId.
-        const selectedMedia = media.find(
-          (med) =>
-            med.tmdbId === result.id && (type ? med.mediaType === type : true)
-        );
+      results: data.results.map(
+        (result: TmdbSearchMultiResponse['results'][number]) => {
+          const selectedMedia = media.find((med) => med.tmdbId === result.id);
 
-        return mapper(result, selectedMedia);
-      }),
+          if (isMovie(result)) {
+            return mapMovieResult(result, selectedMedia);
+          } else if (isPerson(result)) {
+            return mapPersonResult(result);
+          } else if (isCollection(result)) {
+            return mapCollectionResult(result);
+          } else {
+            return mapTvResult(result, selectedMedia);
+          }
+        }
+      ),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving trending items', {
@@ -981,6 +1012,7 @@ discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
     const user = await getRepository(User).findOneOrFail({
       where: { id: req.user?.id },
     });
+    await ensureFreshTraktWatchState(user.id);
 
     return res.status(200).json(
       await getTraktWatchlist({
@@ -1007,6 +1039,7 @@ discoverRoutes.get('/trakt/recommended/movies', async (req, res, next) => {
     const user = await getRepository(User).findOneOrFail({
       where: { id: req.user?.id },
     });
+    await ensureFreshTraktWatchState(user.id);
 
     return res.status(200).json(
       await getTraktRecommendations({
@@ -1036,6 +1069,7 @@ discoverRoutes.get('/trakt/recommended/tv', async (req, res, next) => {
     const user = await getRepository(User).findOneOrFail({
       where: { id: req.user?.id },
     });
+    await ensureFreshTraktWatchState(user.id);
 
     return res.status(200).json(
       await getTraktRecommendations({

@@ -11,9 +11,10 @@ import {
   markMovieWatched,
 } from '@server/lib/traktWatchActions';
 import { getLatestMovieWatchStatus } from '@server/lib/traktWatchState';
+import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import logger from '@server/logger';
-import { mapMovieDetails } from '@server/models/Movie';
 import { isAuthenticated } from '@server/middleware/auth';
+import { mapMovieDetails } from '@server/models/Movie';
 import { mapMovieResult } from '@server/models/Search';
 import { Router } from 'express';
 
@@ -40,9 +41,21 @@ movieRoutes.get('/:id', async (req, res, next) => {
       },
     });
 
-    const userWatchStatus = req.user
-      ? await getLatestMovieWatchStatus(req.user.id, tmdbMovie.id)
-      : undefined;
+    let userWatchStatus:
+      | Awaited<ReturnType<typeof getLatestMovieWatchStatus>>
+      | undefined;
+
+    const traktWatchStateEnabled =
+      !!req.user?.traktUsername && !!req.user.settings?.traktHistorySyncEnabled;
+
+    if (req.user && traktWatchStateEnabled) {
+      await ensureFreshTraktWatchState(req.user.id);
+      userWatchStatus = await getLatestMovieWatchStatus(
+        req.user.id,
+        tmdbMovie.id
+      );
+    }
+
     const data = mapMovieDetails(
       tmdbMovie,
       media,
@@ -98,7 +111,8 @@ movieRoutes.post('/:id/watch', isAuthenticated(), async (req, res, next) => {
   } catch (error) {
     return next({
       status: 500,
-      message: error instanceof Error ? error.message : 'Unable to mark watched.',
+      message:
+        error instanceof Error ? error.message : 'Unable to mark watched.',
     });
   }
 });

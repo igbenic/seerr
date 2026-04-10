@@ -3,6 +3,7 @@ import type {
   TraktHistoryPage,
   TraktMovieHistoryItem,
 } from '@server/api/trakt';
+import { TraktAuthenticationError } from '@server/api/trakt';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import { TraktHistory } from '@server/entity/TraktHistory';
@@ -13,7 +14,12 @@ import type {
   TraktHistoryMediaType,
   TraktHistoryStatusResponse,
 } from '@server/interfaces/api/userInterfaces';
-import { createTraktApiForUser } from '@server/lib/trakt';
+import { clearTraktConnection, createTraktApiForUser } from '@server/lib/trakt';
+import {
+  ensureTraktUserSettings,
+  getTraktHistoryStaleThresholdMs,
+  shouldRefreshTraktData,
+} from '@server/lib/traktUserData';
 import logger from '@server/logger';
 
 const TRAKT_HISTORY_PAGE_SIZE = 100;
@@ -21,28 +27,8 @@ const TRAKT_HISTORY_UPSERT_CHUNK_SIZE = 100;
 const runningUserSyncs = new Set<number>();
 
 type SyncOptions = {
+  forceFull?: boolean;
   isScheduled?: boolean;
-};
-
-const ensureUserSettings = async (userId: number): Promise<UserSettings> => {
-  const settingsRepository = getRepository(UserSettings);
-  const existing = await settingsRepository.findOne({
-    where: { user: { id: userId } },
-  });
-
-  if (existing) {
-    return existing;
-  }
-
-  const user = await getRepository(User).findOneOrFail({
-    where: { id: userId },
-  });
-
-  return settingsRepository.save(
-    new UserSettings({
-      user,
-    })
-  );
 };
 
 const toEntity = (
@@ -143,15 +129,22 @@ export const getTraktHistoryStatus = async (
     relations: ['settings'],
     where: { id: userId },
   });
+  const settings =
+    user?.settings ??
+    (user?.traktUsername ? await ensureTraktUserSettings(userId) : null);
   const totalItems = await getRepository(TraktHistory).count({
     where: { userId },
   });
 
   return {
-    enabled: !!user?.settings?.traktHistorySyncEnabled,
-    lastAttemptedSyncAt: user?.settings?.traktHistoryLastSyncAttemptAt ?? null,
-    lastSuccessfulSyncAt: user?.settings?.traktHistoryLastSyncAt ?? null,
-    latestImportedWatchedAt: user?.settings?.traktHistoryLatestWatchedAt ?? null,
+    enabled: !!settings?.traktHistorySyncEnabled,
+    lastAttemptedSyncAt: settings?.traktHistoryLastSyncAttemptAt ?? null,
+    lastSuccessfulSyncAt: settings?.traktHistoryLastSyncAt ?? null,
+    latestImportedWatchedAt: settings?.traktHistoryLatestWatchedAt ?? null,
+    watchStateBootstrapped: !!settings?.traktWatchStateBootstrappedAt,
+    watchStateLastAttemptedSyncAt:
+      settings?.traktWatchStateLastSyncAttemptAt ?? null,
+    watchStateLastSuccessfulSyncAt: settings?.traktWatchStateLastSyncAt ?? null,
     totalItems,
     traktConnected: !!user?.traktUsername,
   };
@@ -168,6 +161,8 @@ export const listTraktHistory = async ({
   take: number;
   userId: number;
 }): Promise<TraktHistoryListResponse> => {
+  await ensureFreshTraktHistory(userId);
+
   const where =
     mediaType && mediaType !== 'all'
       ? {
@@ -224,19 +219,30 @@ export const syncTraktHistoryForUser = async (
       throw new Error('Trakt is not linked for this user.');
     }
 
-    const settings = await ensureUserSettings(userId);
+    const settings = await ensureTraktUserSettings(userId);
     settings.traktHistoryLastSyncAttemptAt = new Date();
     await getRepository(UserSettings).save(settings);
 
-    const since = user.settings?.traktHistoryLatestWatchedAt ?? null;
+    const forceFull = !!options.forceFull || !settings.traktHistoryLastSyncAt;
+    const since = forceFull
+      ? null
+      : (settings.traktHistoryLatestWatchedAt ?? null);
     const [movieEntries, showEntries] = await Promise.all([
       collectHistoryEntries({ path: 'movies', since, userId }),
       collectHistoryEntries({ path: 'shows', since, userId }),
     ]);
     const entries = [...movieEntries, ...showEntries];
 
+    if (forceFull) {
+      await getRepository(TraktHistory).delete({ userId });
+    }
+
     if (entries.length > 0) {
-      for (let index = 0; index < entries.length; index += TRAKT_HISTORY_UPSERT_CHUNK_SIZE) {
+      for (
+        let index = 0;
+        index < entries.length;
+        index += TRAKT_HISTORY_UPSERT_CHUNK_SIZE
+      ) {
         await getRepository(TraktHistory).upsert(
           entries.slice(index, index + TRAKT_HISTORY_UPSERT_CHUNK_SIZE),
           ['userId', 'historyId']
@@ -255,6 +261,7 @@ export const syncTraktHistoryForUser = async (
 
     logger.info('Trakt watch history sync completed', {
       added: entries.length,
+      forceFull,
       isScheduled: !!options.isScheduled,
       label: 'Trakt History',
       userId,
@@ -262,6 +269,10 @@ export const syncTraktHistoryForUser = async (
 
     return getTraktHistoryStatus(userId);
   } catch (error) {
+    if (error instanceof TraktAuthenticationError) {
+      await clearTraktConnection(userId);
+    }
+
     logger.error('Trakt watch history sync failed', {
       errorMessage: error instanceof Error ? error.message : 'Unknown error',
       isScheduled: !!options.isScheduled,
@@ -274,14 +285,58 @@ export const syncTraktHistoryForUser = async (
   }
 };
 
+export const ensureFreshTraktHistory = async (userId: number) => {
+  const user = await getRepository(User).findOne({
+    relations: ['settings'],
+    where: { id: userId },
+  });
+
+  if (!user?.traktUsername) {
+    return;
+  }
+
+  const settings = user.settings ?? (await ensureTraktUserSettings(userId));
+
+  if (!settings.traktHistorySyncEnabled) {
+    return;
+  }
+
+  const existingCount = await getRepository(TraktHistory).count({
+    where: { userId },
+  });
+
+  if (existingCount === 0 || !settings.traktHistoryLastSyncAt) {
+    await syncTraktHistoryForUser(userId, { forceFull: true });
+    return;
+  }
+
+  if (
+    shouldRefreshTraktData(
+      settings.traktHistoryLastSyncAt,
+      getTraktHistoryStaleThresholdMs()
+    )
+  ) {
+    void syncTraktHistoryForUser(userId).catch((error) => {
+      logger.error('Background Trakt history refresh failed', {
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        label: 'Trakt History',
+        userId,
+      });
+    });
+  }
+};
+
 export const syncTraktHistoryForEnabledUsers = async (): Promise<void> => {
   const users = await getRepository(User)
     .createQueryBuilder('user')
     .leftJoinAndSelect('user.settings', 'settings')
     .where('user.traktUsername IS NOT NULL')
-    .andWhere('settings.traktHistorySyncEnabled = :enabled', {
-      enabled: true,
-    })
+    .andWhere(
+      '(settings.traktHistorySyncEnabled = :enabled OR settings.id IS NULL)',
+      {
+        enabled: true,
+      }
+    )
     .getMany();
 
   for (const user of users) {

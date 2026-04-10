@@ -53,6 +53,9 @@ export interface TraktHistoryStatusResponse {
   lastAttemptedSyncAt?: Date | null;
   lastSuccessfulSyncAt?: Date | null;
   latestImportedWatchedAt?: Date | null;
+  watchStateBootstrapped: boolean;
+  watchStateLastAttemptedSyncAt?: Date | null;
+  watchStateLastSuccessfulSyncAt?: Date | null;
   totalItems: number;
   traktConnected: boolean;
 }

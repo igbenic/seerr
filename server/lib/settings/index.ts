@@ -574,7 +574,7 @@ class Settings {
           schedule: '0 0 5 * * *',
         },
         'trakt-history-sync': {
-          schedule: '0 0 */6 * * *',
+          schedule: '0 0 * * * *',
         },
         'trakt-watchlist-sync': {
           schedule: '0 0 * * * *',

@@ -6,6 +6,7 @@ import { MediaServerType, ServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
+import { UserSettings } from '@server/entity/UserSettings';
 import { startJobs } from '@server/job/schedule';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
@@ -16,6 +17,9 @@ import {
   isTraktConfigured,
   persistTraktTokens,
 } from '@server/lib/trakt';
+import { syncTraktHistoryForUser } from '@server/lib/traktHistory';
+import { ensureTraktUserSettings } from '@server/lib/traktUserData';
+import { syncTraktWatchStateForUser } from '@server/lib/traktWatched';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
@@ -241,7 +245,27 @@ authRoutes.get('/trakt/callback', async (req, res) => {
     }
 
     await persistTraktTokens(req.user.id, token, traktUsername);
+    const userId = req.user.id;
+    const settings = await ensureTraktUserSettings(userId);
+    settings.traktHistorySyncEnabled = true;
+    await getRepository(UserSettings).save(settings);
     clearTraktOauthSession(req);
+
+    void (async () => {
+      try {
+        await syncTraktWatchStateForUser(userId, { forceFull: true });
+        await syncTraktHistoryForUser(userId, { forceFull: true });
+      } catch (bootstrapError) {
+        logger.error('Initial Trakt bootstrap failed after link', {
+          errorMessage:
+            bootstrapError instanceof Error
+              ? bootstrapError.message
+              : 'Unknown error',
+          label: 'Auth',
+          userId,
+        });
+      }
+    })();
 
     return redirectTo('connected');
   } catch (error) {

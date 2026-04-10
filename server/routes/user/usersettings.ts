@@ -27,6 +27,7 @@ import {
   getTraktHistoryStatus,
   syncTraktHistoryForUser,
 } from '@server/lib/traktHistory';
+import { syncTraktWatchStateForUser } from '@server/lib/traktWatched';
 import {
   getTraktWatchlistStatus,
   syncTraktWatchlistForUser,
@@ -182,8 +183,7 @@ userSettingsRoutes.post<
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
       hideWatched: savedUser.settings?.hideWatched,
       traktHistorySyncEnabled: savedUser.settings?.traktHistorySyncEnabled,
-      traktWatchlistSyncEnabled:
-        savedUser.settings?.traktWatchlistSyncEnabled,
+      traktWatchlistSyncEnabled: savedUser.settings?.traktWatchlistSyncEnabled,
       email: savedUser.email,
     });
   } catch (e) {
@@ -239,9 +239,15 @@ userSettingsRoutes.post<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
-      return res
-        .status(200)
-        .json(await syncTraktHistoryForUser(Number(req.params.id)));
+      const forceFull =
+        req.query.forceFull === 'true' || req.query.forceFull === '1';
+
+      const userId = Number(req.params.id);
+
+      await syncTraktWatchStateForUser(userId, { forceFull });
+      await syncTraktHistoryForUser(userId, { forceFull });
+
+      return res.status(200).json(await getTraktHistoryStatus(userId));
     } catch (e) {
       return next({ status: 500, message: e.message });
     }
@@ -704,12 +710,10 @@ userSettingsRoutes.post<{ id: string }, unknown, { csvContent?: string }>(
     }
 
     try {
-      const preview: ImdbImportPreviewResponse = await createImdbImportPreview(
-        {
-          csvContent: req.body?.csvContent,
-          userId: req.user.id,
-        }
-      );
+      const preview: ImdbImportPreviewResponse = await createImdbImportPreview({
+        csvContent: req.body?.csvContent,
+        userId: req.user.id,
+      });
 
       return res.status(200).json(preview);
     } catch (error) {

@@ -6,6 +6,8 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import PreparedEmail from '@server/lib/email';
 import { getSettings } from '@server/lib/settings';
+import * as traktHistory from '@server/lib/traktHistory';
+import * as traktWatched from '@server/lib/traktWatched';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
 import type { Express } from 'express';
@@ -216,6 +218,26 @@ describe('Trakt auth routes', () => {
         },
       })
     );
+    const syncTraktWatchStateMock = mock.method(
+      traktWatched,
+      'syncTraktWatchStateForUser',
+      async () => undefined
+    );
+    const syncTraktHistoryMock = mock.method(
+      traktHistory,
+      'syncTraktHistoryForUser',
+      async () => ({
+        enabled: true,
+        lastAttemptedSyncAt: null,
+        lastSuccessfulSyncAt: null,
+        latestImportedWatchedAt: null,
+        totalItems: 0,
+        traktConnected: true,
+        watchStateBootstrapped: false,
+        watchStateLastAttemptedSyncAt: null,
+        watchStateLastSuccessfulSyncAt: null,
+      })
+    );
 
     try {
       const callbackRes = await agent.get(
@@ -238,11 +260,19 @@ describe('Trakt auth routes', () => {
         ])
         .where('user.email = :email', { email: 'admin@seerr.dev' })
         .getOneOrFail();
+      const linkedUserSettings = await userRepo.findOneOrFail({
+        relations: ['settings'],
+        where: { email: 'admin@seerr.dev' },
+      });
 
       assert.strictEqual(linkedUser.traktUsername, 'trakt-user');
       assert.strictEqual(linkedUser.traktAccessToken, 'trakt-access-token');
       assert.strictEqual(linkedUser.traktRefreshToken, 'trakt-refresh-token');
       assert.ok(linkedUser.traktTokenExpiresAt);
+      assert.strictEqual(
+        linkedUserSettings.settings?.traktHistorySyncEnabled,
+        true
+      );
 
       const meRes = await agent.get('/auth/me');
       assert.strictEqual(meRes.status, 200);
@@ -252,6 +282,8 @@ describe('Trakt auth routes', () => {
     } finally {
       exchangeCodeMock.mock.restore();
       currentUserSettingsMock.mock.restore();
+      syncTraktWatchStateMock.mock.restore();
+      syncTraktHistoryMock.mock.restore();
     }
   });
 
@@ -262,7 +294,9 @@ describe('Trakt auth routes', () => {
     settings.trakt.clientSecret = 'trakt-client-secret';
     const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
 
-    await agent.get('/auth/trakt/connect?redirect=/profile/settings/linked-accounts');
+    await agent.get(
+      '/auth/trakt/connect?redirect=/profile/settings/linked-accounts'
+    );
 
     const exchangeCodeMock = mock.method(
       TraktAPI,
@@ -290,9 +324,31 @@ describe('Trakt auth routes', () => {
         },
       })
     );
+    const syncTraktWatchStateMock = mock.method(
+      traktWatched,
+      'syncTraktWatchStateForUser',
+      async () => undefined
+    );
+    const syncTraktHistoryMock = mock.method(
+      traktHistory,
+      'syncTraktHistoryForUser',
+      async () => ({
+        enabled: true,
+        lastAttemptedSyncAt: null,
+        lastSuccessfulSyncAt: null,
+        latestImportedWatchedAt: null,
+        totalItems: 0,
+        traktConnected: true,
+        watchStateBootstrapped: false,
+        watchStateLastAttemptedSyncAt: null,
+        watchStateLastSuccessfulSyncAt: null,
+      })
+    );
 
     try {
-      const callbackRes = await agent.get('/auth/trakt/callback?code=test-code');
+      const callbackRes = await agent.get(
+        '/auth/trakt/callback?code=test-code'
+      );
 
       assert.strictEqual(callbackRes.status, 302);
       assert.strictEqual(
@@ -302,6 +358,8 @@ describe('Trakt auth routes', () => {
     } finally {
       exchangeCodeMock.mock.restore();
       currentUserSettingsMock.mock.restore();
+      syncTraktWatchStateMock.mock.restore();
+      syncTraktHistoryMock.mock.restore();
     }
   });
 

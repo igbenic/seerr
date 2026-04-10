@@ -1,46 +1,20 @@
-import type {
-  TraktListedMovie,
-  TraktListedShow,
-} from '@server/api/trakt';
+import type { TraktListedMovie, TraktListedShow } from '@server/api/trakt';
 import { TraktAuthenticationError } from '@server/api/trakt';
 import { MediaType } from '@server/constants/media';
-import { getRepository } from '@server/datasource';
-import { TraktHistory } from '@server/entity/TraktHistory';
+import dataSource, { getRepository } from '@server/datasource';
 import { TraktWatchlist } from '@server/entity/TraktWatchlist';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import type {
-  TraktWatchlistStatusResponse,
-} from '@server/interfaces/api/userInterfaces';
-import { clearTraktConnection, createTraktApiForUser } from '@server/lib/trakt';
+import type { TraktWatchlistStatusResponse } from '@server/interfaces/api/userInterfaces';
 import { getSettings } from '@server/lib/settings';
+import { clearTraktConnection, createTraktApiForUser } from '@server/lib/trakt';
+import { ensureTraktUserSettings } from '@server/lib/traktUserData';
+import { getWatchedMediaSetsForUser } from '@server/lib/traktWatched';
 import logger from '@server/logger';
-import { In } from 'typeorm';
 
 const TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE = 100;
 const runningUserSyncs = new Set<number>();
-
-const ensureUserSettings = async (userId: number): Promise<UserSettings> => {
-  const settingsRepository = getRepository(UserSettings);
-  const existing = await settingsRepository.findOne({
-    where: { user: { id: userId } },
-  });
-
-  if (existing) {
-    return existing;
-  }
-
-  const user = await getRepository(User).findOneOrFail({
-    where: { id: userId },
-  });
-
-  return settingsRepository.save(
-    new UserSettings({
-      user,
-    })
-  );
-};
 
 const toEntity = (
   userId: number,
@@ -99,30 +73,6 @@ const shouldRefreshWatchlist = (lastSyncAt?: Date | null) => {
   return Date.now() - new Date(lastSyncAt).getTime() >= getStaleThresholdMs();
 };
 
-const getWatchedSetsForUser = async (userId: number) => {
-  const rows = await getRepository(TraktHistory)
-    .createQueryBuilder('history')
-    .select('history.mediaType', 'mediaType')
-    .addSelect('history.tmdbId', 'tmdbId')
-    .where('history.userId = :userId', { userId })
-    .andWhere('history.tmdbId IS NOT NULL')
-    .distinct(true)
-    .getRawMany<{ mediaType: MediaType; tmdbId: number }>();
-
-  const movieIds = new Set<number>();
-  const tvIds = new Set<number>();
-
-  for (const row of rows) {
-    if (row.mediaType === MediaType.MOVIE) {
-      movieIds.add(Number(row.tmdbId));
-    } else if (row.mediaType === MediaType.TV) {
-      tvIds.add(Number(row.tmdbId));
-    }
-  }
-
-  return { movieIds, tvIds };
-};
-
 const mapTraktWatchlistItems = ({
   hideWatched,
   items,
@@ -158,48 +108,28 @@ const mapTraktWatchlistItems = ({
     ];
   });
 
-const syncLocalEntries = async ({
+export const syncLocalEntries = async ({
   entries,
   userId,
 }: {
   entries: TraktWatchlist[];
   userId: number;
 }) => {
-  const repository = getRepository(TraktWatchlist);
-  const existingRows = await repository.find({
-    select: {
-      watchlistEntryId: true,
-    },
-    where: { userId },
+  await dataSource.transaction(async (manager) => {
+    const repository = manager.getRepository(TraktWatchlist);
+
+    await repository.delete({ userId });
+
+    for (
+      let index = 0;
+      index < entries.length;
+      index += TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE
+    ) {
+      await repository.insert(
+        entries.slice(index, index + TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE)
+      );
+    }
   });
-  const incomingIds = new Set(entries.map((item) => item.watchlistEntryId));
-  const rowsToDelete = existingRows
-    .map((item) => item.watchlistEntryId)
-    .filter((watchlistEntryId) => !incomingIds.has(watchlistEntryId));
-
-  for (
-    let index = 0;
-    index < entries.length;
-    index += TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE
-  ) {
-    await repository.upsert(
-      entries.slice(index, index + TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE),
-      ['userId', 'watchlistEntryId']
-    );
-  }
-
-  for (
-    let index = 0;
-    index < rowsToDelete.length;
-    index += TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE
-  ) {
-    await repository.delete({
-      userId,
-      watchlistEntryId: In(
-        rowsToDelete.slice(index, index + TRAKT_WATCHLIST_UPSERT_CHUNK_SIZE)
-      ),
-    });
-  }
 };
 
 export const getTraktWatchlistStatus = async (
@@ -215,7 +145,8 @@ export const getTraktWatchlistStatus = async (
 
   return {
     enabled: !!user?.settings?.traktWatchlistSyncEnabled,
-    lastAttemptedSyncAt: user?.settings?.traktWatchlistLastSyncAttemptAt ?? null,
+    lastAttemptedSyncAt:
+      user?.settings?.traktWatchlistLastSyncAttemptAt ?? null,
     lastError: user?.settings?.traktWatchlistLastError ?? null,
     lastSuccessfulSyncAt: user?.settings?.traktWatchlistLastSyncAt ?? null,
     totalItems,
@@ -242,7 +173,7 @@ export const syncTraktWatchlistForUser = async (
       throw new Error('Trakt is not linked for this user.');
     }
 
-    const settings = await ensureUserSettings(userId);
+    const settings = await ensureTraktUserSettings(userId);
     settings.traktWatchlistLastSyncAttemptAt = new Date();
     await getRepository(UserSettings).save(settings);
 
@@ -270,7 +201,7 @@ export const syncTraktWatchlistForUser = async (
 
     return getTraktWatchlistStatus(userId);
   } catch (error) {
-    const settings = await ensureUserSettings(userId);
+    const settings = await ensureTraktUserSettings(userId);
     settings.traktWatchlistLastError =
       error instanceof Error ? error.message : 'Unknown error';
     await getRepository(UserSettings).save(settings);
@@ -332,15 +263,19 @@ export const getTraktWatchlist = async ({
         await syncTraktWatchlistForUser(user.id);
       } catch (error) {
         logger.error('Initial Trakt watchlist sync failed', {
-          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error',
           label: 'Trakt Watchlist',
           userId: user.id,
         });
       }
-    } else if (shouldRefreshWatchlist(user.settings?.traktWatchlistLastSyncAt)) {
+    } else if (
+      shouldRefreshWatchlist(user.settings?.traktWatchlistLastSyncAt)
+    ) {
       void syncTraktWatchlistForUser(user.id).catch((error) => {
         logger.error('Background Trakt watchlist refresh failed', {
-          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error',
           label: 'Trakt Watchlist',
           userId: user.id,
         });
@@ -352,8 +287,11 @@ export const getTraktWatchlist = async ({
     order: { listedAt: 'DESC', rank: 'ASC', id: 'ASC' },
     where: { userId: user.id },
   });
-  const hideWatched = !!user.settings?.hideWatched;
-  const watched = hideWatched ? await getWatchedSetsForUser(user.id) : undefined;
+  const hideWatched =
+    !!user.settings?.hideWatched && !!user.settings?.traktHistorySyncEnabled;
+  const watched = hideWatched
+    ? await getWatchedMediaSetsForUser(user.id)
+    : undefined;
   const mappedItems = mapTraktWatchlistItems({
     hideWatched,
     items,

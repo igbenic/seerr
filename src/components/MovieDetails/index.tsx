@@ -6,6 +6,7 @@ import ImdbLogo from '@app/assets/services/imdb.svg';
 import Spinner from '@app/assets/spinner.svg';
 import TmdbLogo from '@app/assets/tmdb_logo.svg';
 import BlocklistModal from '@app/components/BlocklistModal';
+import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
@@ -112,6 +113,8 @@ const messages = defineMessages('components.MovieDetails', {
   watchedSuccess: '<strong>{title}</strong> marked watched.',
   unwatchedSuccess: '<strong>{title}</strong> marked unwatched.',
   watchedError: 'Unable to update watched status.',
+  watched: 'Watched',
+  watchedOn: 'Watched {date}',
 });
 
 interface MovieDetailsProps {
@@ -189,6 +192,25 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     return <ErrorPage statusCode={404} />;
   }
 
+  const formatWatchDate = (value?: Date | string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    return intl.formatDate(date, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const watchedDateLabel = formatWatchDate(data.userWatchStatus?.watchedAt);
   const showAllStudios = data.productionCompanies.length <= minStudios + 1;
   const mediaLinks: PlayButtonLink[] = [];
 
@@ -611,6 +633,20 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                   </>
                 ))}
           </span>
+          {data.userWatchStatus?.watched && (
+            <div
+              className="mt-3 flex flex-wrap gap-2"
+              data-testid="movie-watched-badge"
+            >
+              <Badge badgeType="success">
+                {watchedDateLabel
+                  ? intl.formatMessage(messages.watchedOn, {
+                      date: watchedDateLabel,
+                    })
+                  : intl.formatMessage(messages.watched)}
+              </Badge>
+            </div>
+          )}
         </div>
         <div className="media-actions">
           {showHideButton &&
@@ -644,7 +680,9 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                     )}
                   >
                     <Button
-                      buttonType={data.userWatchStatus?.watched ? 'primary' : 'ghost'}
+                      buttonType={
+                        data.userWatchStatus?.watched ? 'primary' : 'ghost'
+                      }
                       className="z-40 mr-2"
                       buttonSize={'md'}
                       onClick={onClickWatchStatusBtn}
