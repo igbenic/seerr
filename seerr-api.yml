@@ -4431,6 +4431,7 @@ paths:
       parameters:
         - in: query
           name: code
+          allowReserved: true
           schema:
             type: string
           required: true
@@ -4487,6 +4488,7 @@ paths:
       parameters:
         - in: query
           name: code
+          allowReserved: true
           schema:
             type: string
           required: true
