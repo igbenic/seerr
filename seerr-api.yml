@@ -4497,6 +4497,28 @@ paths:
           schema:
             type: string
           required: true
+        - in: query
+          name: iss
+          allowReserved: true
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: scope
+          allowReserved: true
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: authuser
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: prompt
+          schema:
+            type: string
+          required: false
       responses:
         '302':
           description: Redirect to the linked accounts page with connection status
