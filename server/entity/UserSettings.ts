@@ -112,6 +112,36 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true })
   public traktWatchlistLastError?: string | null;
 
+  @Column({ default: false })
+  public googleSheetsWatchlistSyncEnabled?: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  public googleSheetsWatchlistSpreadsheetId?: string | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public googleSheetsWatchlistLastSyncAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public googleSheetsWatchlistLastSyncAttemptAt?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  public googleSheetsWatchlistLastError?: string | null;
+
+  @Column({ default: false })
+  public googleSheetsWatchedSyncEnabled?: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  public googleSheetsWatchedSpreadsheetId?: string | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public googleSheetsWatchedLastSyncAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public googleSheetsWatchedLastSyncAttemptAt?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  public googleSheetsWatchedLastError?: string | null;
+
   @Column({
     type: 'text',
     nullable: true,

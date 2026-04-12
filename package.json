@@ -66,6 +66,7 @@
     "express-rate-limit": "6.7.0",
     "express-session": "1.18.2",
     "formik": "^2.4.9",
+    "googleapis": "171.4.0",
     "gravatar-url": "3.1.0",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",

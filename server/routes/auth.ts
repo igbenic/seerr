@@ -8,6 +8,16 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { startJobs } from '@server/job/schedule';
+import {
+  GOOGLE_SHEETS_SCOPES,
+  buildGoogleSheetsRedirectUri,
+  clearGoogleSheetsConnection,
+  createGoogleSheetsOAuthClient,
+  getGoogleDriveProfile,
+  getGoogleSheetsStatus,
+  isGoogleSheetsConfigured,
+  persistGoogleSheetsTokens,
+} from '@server/lib/googleSheets';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import {
@@ -29,13 +39,14 @@ import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
 import { Router } from 'express';
+import { google } from 'googleapis';
 import net from 'net';
 import validator from 'validator';
 
 const authRoutes = Router();
 const DEFAULT_TRAKT_REDIRECT = '/profile/settings/linked-accounts';
 
-const getSafeTraktRedirectPath = (redirect?: string | string[]): string => {
+const getSafeAuthRedirectPath = (redirect?: string | string[]): string => {
   if (typeof redirect !== 'string' || !redirect) {
     return DEFAULT_TRAKT_REDIRECT;
   }
@@ -70,10 +81,38 @@ const clearTraktOauthSession = (req: {
   delete req.session.traktOAuthState;
 };
 
-const buildTraktResultRedirect = (redirectPath: string, status: string) => {
+const clearGoogleSheetsOauthSession = (req: {
+  session?: {
+    destroy?: (callback: (err?: unknown) => void) => void;
+  };
+}) => {
+  const session = req.session as
+    | ({
+        googleSheetsOAuthRedirect?: string;
+        googleSheetsOAuthState?: string;
+      } & typeof req.session)
+    | undefined;
+
+  if (!session) {
+    return;
+  }
+
+  delete session.googleSheetsOAuthRedirect;
+  delete session.googleSheetsOAuthState;
+};
+
+const buildAuthResultRedirect = ({
+  param,
+  redirectPath,
+  status,
+}: {
+  param: string;
+  redirectPath: string;
+  status: string;
+}) => {
   const parsed = new URL(redirectPath, 'http://localhost');
 
-  parsed.searchParams.set('trakt', status);
+  parsed.searchParams.set(param, status);
 
   return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 };
@@ -139,7 +178,7 @@ authRoutes.get('/trakt/connect', isAuthenticated(), (req, res, next) => {
   }
 
   const traktSettings = getSettings().trakt;
-  const redirectPath = getSafeTraktRedirectPath(
+  const redirectPath = getSafeAuthRedirectPath(
     req.query.redirect as string | string[] | undefined
   );
   const state = randomUUID();
@@ -161,11 +200,17 @@ authRoutes.get('/trakt/connect', isAuthenticated(), (req, res, next) => {
 });
 
 authRoutes.get('/trakt/callback', async (req, res) => {
-  const redirectPath = getSafeTraktRedirectPath(
+  const redirectPath = getSafeAuthRedirectPath(
     req.session?.traktOAuthRedirect ?? DEFAULT_TRAKT_REDIRECT
   );
   const redirectTo = (status: string) =>
-    res.redirect(buildTraktResultRedirect(redirectPath, status));
+    res.redirect(
+      buildAuthResultRedirect({
+        param: 'trakt',
+        redirectPath,
+        status,
+      })
+    );
 
   if (!req.user || !req.session?.traktOAuthState) {
     clearTraktOauthSession(req);
@@ -280,6 +325,214 @@ authRoutes.get('/trakt/callback', async (req, res) => {
     return redirectTo('error');
   }
 });
+
+authRoutes.get(
+  '/google-sheets/status',
+  isAuthenticated(),
+  async (req, res, next) => {
+    if (!req.user) {
+      return next({ status: 500, message: 'Please sign in.' });
+    }
+
+    try {
+      return res.status(200).json(await getGoogleSheetsStatus(req.user.id));
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to load Google Sheets status.',
+      });
+    }
+  }
+);
+
+authRoutes.get(
+  '/google-sheets/connect',
+  isAuthenticated(),
+  (req, res, next) => {
+    if (!req.user) {
+      return next({ status: 500, message: 'Please sign in.' });
+    }
+
+    if (!req.session) {
+      return next({ status: 500, message: 'Session unavailable.' });
+    }
+
+    if (!isGoogleSheetsConfigured()) {
+      return next({ status: 404, message: 'Google Sheets is not configured.' });
+    }
+
+    const host = req.get('host');
+
+    if (!host) {
+      return next({
+        status: 500,
+        message: 'Unable to determine request host.',
+      });
+    }
+
+    const redirectPath = getSafeAuthRedirectPath(
+      req.query.redirect as string | string[] | undefined
+    );
+    const state = randomUUID();
+    const googleSheetsSession = req.session as typeof req.session & {
+      googleSheetsOAuthRedirect?: string;
+      googleSheetsOAuthState?: string;
+    };
+    const redirectUri = buildGoogleSheetsRedirectUri({
+      host,
+      protocol: req.protocol,
+    });
+    const authClient = createGoogleSheetsOAuthClient(redirectUri);
+
+    googleSheetsSession.googleSheetsOAuthRedirect = redirectPath;
+    googleSheetsSession.googleSheetsOAuthState = state;
+
+    return res.redirect(
+      authClient.generateAuthUrl({
+        access_type: 'offline',
+        include_granted_scopes: true,
+        prompt: 'consent',
+        scope: GOOGLE_SHEETS_SCOPES,
+        state,
+      })
+    );
+  }
+);
+
+authRoutes.get('/google-sheets/callback', async (req, res) => {
+  const googleSheetsSession = req.session as typeof req.session & {
+    googleSheetsOAuthRedirect?: string;
+    googleSheetsOAuthState?: string;
+  };
+  const redirectPath = getSafeAuthRedirectPath(
+    googleSheetsSession?.googleSheetsOAuthRedirect ?? DEFAULT_TRAKT_REDIRECT
+  );
+  const redirectTo = (status: string) =>
+    res.redirect(
+      buildAuthResultRedirect({
+        param: 'googleSheets',
+        redirectPath,
+        status,
+      })
+    );
+
+  if (!req.user || !googleSheetsSession?.googleSheetsOAuthState) {
+    clearGoogleSheetsOauthSession(req);
+
+    return redirectTo('error');
+  }
+
+  if (!isGoogleSheetsConfigured()) {
+    clearGoogleSheetsOauthSession(req);
+
+    return redirectTo('not-configured');
+  }
+
+  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+  const state =
+    typeof req.query.state === 'string' ? req.query.state : undefined;
+  const host = req.get('host');
+
+  if (!code || !host) {
+    clearGoogleSheetsOauthSession(req);
+
+    return redirectTo('error');
+  }
+
+  if (state !== googleSheetsSession.googleSheetsOAuthState) {
+    logger.warn('Rejected Google Sheets callback due to invalid OAuth state', {
+      label: 'Auth',
+      userId: req.user.id,
+      ip: req.ip,
+    });
+    clearGoogleSheetsOauthSession(req);
+
+    return redirectTo('invalid-state');
+  }
+
+  try {
+    const redirectUri = buildGoogleSheetsRedirectUri({
+      host,
+      protocol: req.protocol,
+    });
+    const authClient = createGoogleSheetsOAuthClient(redirectUri);
+    const { tokens } = await authClient.getToken(code);
+    authClient.setCredentials(tokens);
+
+    const googleDrive = google.drive({ auth: authClient, version: 'v3' });
+    const googleUser = await getGoogleDriveProfile(googleDrive);
+
+    if (!googleUser.accountId || !googleUser.email) {
+      throw new Error('Google did not return an account identity.');
+    }
+
+    const userRepository = getRepository(User);
+    const existingUser = await userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.googleSheetsAccountId')
+      .where('user.googleSheetsAccountId = :accountId', {
+        accountId: googleUser.accountId,
+      })
+      .getOne();
+
+    if (existingUser && existingUser.id !== req.user.id) {
+      clearGoogleSheetsOauthSession(req);
+
+      return redirectTo('already-linked');
+    }
+
+    await persistGoogleSheetsTokens({
+      accessToken: tokens.access_token ?? null,
+      accountId: googleUser.accountId,
+      connectedAt: new Date(),
+      email: googleUser.email,
+      refreshToken: tokens.refresh_token ?? null,
+      tokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+      userId: req.user.id,
+    });
+    clearGoogleSheetsOauthSession(req);
+
+    return redirectTo('connected');
+  } catch (error) {
+    logger.error('Something went wrong linking Google Sheets account', {
+      label: 'Auth',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      userId: req.user.id,
+      ip: req.ip,
+    });
+    clearGoogleSheetsOauthSession(req);
+
+    return redirectTo('error');
+  }
+});
+
+authRoutes.delete(
+  '/google-sheets/disconnect',
+  isAuthenticated(),
+  async (req, res, next) => {
+    if (!req.user) {
+      return next({ status: 500, message: 'Please sign in.' });
+    }
+
+    try {
+      await clearGoogleSheetsConnection(req.user.id);
+      clearGoogleSheetsOauthSession(req);
+
+      return res.status(204).send();
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to disconnect Google Sheets account.',
+      });
+    }
+  }
+);
 
 authRoutes.delete(
   '/trakt/disconnect',

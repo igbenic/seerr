@@ -70,6 +70,12 @@ export interface TraktSettings {
   clientSecret: string;
 }
 
+export interface GoogleSheetsSettings {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+}
+
 export interface DVRSettings {
   id: number;
   name: string;
@@ -194,6 +200,7 @@ interface PublicSettings {
 interface FullPublicSettings extends PublicSettings {
   applicationTitle: string;
   applicationUrl: string;
+  googleSheetsEnabled: boolean;
   hideAvailable: boolean;
   hideBlocklisted: boolean;
   localLogin: boolean;
@@ -376,6 +383,7 @@ export interface AllSettings {
   jellyfin: JellyfinSettings;
   tautulli: TautulliSettings;
   trakt: TraktSettings;
+  googleSheets: GoogleSheetsSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
   public: PublicSettings;
@@ -446,6 +454,11 @@ class Settings {
       },
       tautulli: {},
       trakt: {
+        enabled: false,
+        clientId: '',
+        clientSecret: '',
+      },
+      googleSheets: {
         enabled: false,
         clientId: '',
         clientSecret: '',
@@ -715,6 +728,10 @@ class Settings {
       ...this.data.public,
       applicationTitle: this.data.main.applicationTitle,
       applicationUrl: this.data.main.applicationUrl,
+      googleSheetsEnabled:
+        this.data.googleSheets.enabled &&
+        !!this.data.googleSheets.clientId &&
+        !!this.data.googleSheets.clientSecret,
       hideAvailable: this.data.main.hideAvailable,
       hideBlocklisted: this.data.main.hideBlocklisted,
       localLogin: this.data.main.localLogin,
@@ -751,6 +768,14 @@ class Settings {
 
   get notifications(): NotificationSettings {
     return this.data.notifications;
+  }
+
+  get googleSheets(): GoogleSheetsSettings {
+    return this.data.googleSheets;
+  }
+
+  set googleSheets(data: GoogleSheetsSettings) {
+    this.data.googleSheets = mergeSettings(this.data.googleSheets, data);
   }
 
   set notifications(data: NotificationSettings) {

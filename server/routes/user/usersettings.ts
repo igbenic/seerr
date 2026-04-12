@@ -7,6 +7,7 @@ import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import type { GoogleSheetsSyncStatusResponse } from '@server/interfaces/api/googleSheetsInterfaces';
 import type {
   ImdbImportConfirmResponse,
   ImdbImportPreviewResponse,
@@ -15,6 +16,11 @@ import type {
   UserSettingsGeneralResponse,
   UserSettingsNotificationsResponse,
 } from '@server/interfaces/api/userSettingsInterfaces';
+import {
+  getGoogleSheetsSyncStatus,
+  syncGoogleSheetsWatchedForUser,
+  syncGoogleSheetsWatchlistForUser,
+} from '@server/lib/googleSheetsSync';
 import {
   clearImdbConnection,
   confirmImdbImport,
@@ -86,6 +92,10 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         hideWatched: user.settings?.hideWatched,
         traktHistorySyncEnabled: user.settings?.traktHistorySyncEnabled,
         traktWatchlistSyncEnabled: user.settings?.traktWatchlistSyncEnabled,
+        googleSheetsWatchlistSyncEnabled:
+          user.settings?.googleSheetsWatchlistSyncEnabled,
+        googleSheetsWatchedSyncEnabled:
+          user.settings?.googleSheetsWatchedSyncEnabled,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -155,6 +165,9 @@ userSettingsRoutes.post<
         hideWatched: req.body.hideWatched,
         traktHistorySyncEnabled: req.body.traktHistorySyncEnabled,
         traktWatchlistSyncEnabled: req.body.traktWatchlistSyncEnabled,
+        googleSheetsWatchlistSyncEnabled:
+          req.body.googleSheetsWatchlistSyncEnabled,
+        googleSheetsWatchedSyncEnabled: req.body.googleSheetsWatchedSyncEnabled,
       });
     } else {
       user.settings.discordId = req.body.discordId;
@@ -168,6 +181,10 @@ userSettingsRoutes.post<
       user.settings.traktHistorySyncEnabled = req.body.traktHistorySyncEnabled;
       user.settings.traktWatchlistSyncEnabled =
         req.body.traktWatchlistSyncEnabled;
+      user.settings.googleSheetsWatchlistSyncEnabled =
+        req.body.googleSheetsWatchlistSyncEnabled;
+      user.settings.googleSheetsWatchedSyncEnabled =
+        req.body.googleSheetsWatchedSyncEnabled;
     }
 
     const savedUser = await userRepository.save(user);
@@ -184,6 +201,10 @@ userSettingsRoutes.post<
       hideWatched: savedUser.settings?.hideWatched,
       traktHistorySyncEnabled: savedUser.settings?.traktHistorySyncEnabled,
       traktWatchlistSyncEnabled: savedUser.settings?.traktWatchlistSyncEnabled,
+      googleSheetsWatchlistSyncEnabled:
+        savedUser.settings?.googleSheetsWatchlistSyncEnabled,
+      googleSheetsWatchedSyncEnabled:
+        savedUser.settings?.googleSheetsWatchedSyncEnabled,
       email: savedUser.email,
     });
   } catch (e) {
@@ -276,6 +297,54 @@ userSettingsRoutes.post<{ id: string }>(
       return res
         .status(200)
         .json(await syncTraktWatchlistForUser(Number(req.params.id)));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.get<{ id: string }, GoogleSheetsSyncStatusResponse>(
+  '/google-sheets',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      return res
+        .status(200)
+        .json(await getGoogleSheetsSyncStatus(Number(req.params.id)));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }, GoogleSheetsSyncStatusResponse>(
+  '/google-sheets/watchlist/sync',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id);
+
+      await syncTraktWatchlistForUser(userId);
+
+      return res
+        .status(200)
+        .json(await syncGoogleSheetsWatchlistForUser(userId));
+    } catch (e) {
+      return next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }, GoogleSheetsSyncStatusResponse>(
+  '/google-sheets/watched/sync',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id);
+
+      await syncTraktWatchStateForUser(userId, { forceFull: true });
+
+      return res.status(200).json(await syncGoogleSheetsWatchedForUser(userId));
     } catch (e) {
       return next({ status: 500, message: e.message });
     }

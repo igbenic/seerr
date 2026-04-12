@@ -17,6 +17,7 @@ import {
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
+import type { GoogleSheetsSyncStatusResponse } from '@server/interfaces/api/googleSheetsInterfaces';
 import type {
   TraktHistoryStatusResponse,
   TraktWatchlistStatusResponse,
@@ -111,6 +112,33 @@ const messages = defineMessages(
     traktWatchlistStatusLastError: 'Last error',
     traktWatchlistSyncSuccess: 'Trakt watchlist sync completed.',
     traktWatchlistSyncFailure: 'Unable to sync Trakt watchlist.',
+    googleSheetsWatchlistSync: 'Mirror Want to Watch to Google Sheets',
+    googleSheetsWatchlistSyncTip:
+      'Create and maintain an app-managed Google spreadsheet from your Trakt watchlist.',
+    googleSheetsWatchlistSheet: 'Spreadsheet',
+    googleSheetsWatchlistSyncNow: 'Sync Now',
+    googleSheetsWatchlistStatusConnected:
+      'Linked Google Sheets and Trakt accounts required for sync.',
+    googleSheetsWatchlistStatusLastSuccess: 'Last successful sync',
+    googleSheetsWatchlistStatusLastAttempt: 'Last attempted sync',
+    googleSheetsWatchlistStatusLastError: 'Last error',
+    googleSheetsWatchlistSyncSuccess:
+      'Google Sheets want-to-watch sync completed.',
+    googleSheetsWatchlistSyncFailure:
+      'Unable to sync the Google Sheets want-to-watch spreadsheet.',
+    googleSheetsWatchedSync: 'Mirror Watched to Google Sheets',
+    googleSheetsWatchedSyncTip:
+      'Create and maintain an app-managed Google spreadsheet of unique Trakt-watched titles.',
+    googleSheetsWatchedSheet: 'Spreadsheet',
+    googleSheetsWatchedSyncNow: 'Sync Now',
+    googleSheetsWatchedStatusConnected:
+      'Linked Google Sheets and Trakt accounts required for sync.',
+    googleSheetsWatchedStatusLastSuccess: 'Last successful sync',
+    googleSheetsWatchedStatusLastAttempt: 'Last attempted sync',
+    googleSheetsWatchedStatusLastError: 'Last error',
+    googleSheetsWatchedSyncSuccess: 'Google Sheets watched sync completed.',
+    googleSheetsWatchedSyncFailure:
+      'Unable to sync the Google Sheets watched spreadsheet.',
   }
 );
 
@@ -144,6 +172,10 @@ const UserGeneralSettings = () => {
   const { data: traktWatchlistStatus, mutate: revalidateTraktWatchlistStatus } =
     useSWR<TraktWatchlistStatusResponse>(
       user ? `/api/v1/user/${user?.id}/settings/trakt-watchlist` : null
+    );
+  const { data: googleSheetsStatus, mutate: revalidateGoogleSheetsStatus } =
+    useSWR<GoogleSheetsSyncStatusResponse>(
+      user ? `/api/v1/user/${user?.id}/settings/google-sheets` : null
     );
   const hasMediaServerEmailFallback =
     !!user?.jellyfinUsername || !!user?.plexUsername;
@@ -244,6 +276,9 @@ const UserGeneralSettings = () => {
           watchlistSyncMovies: data?.watchlistSyncMovies,
           watchlistSyncTv: data?.watchlistSyncTv,
           hideWatched: data?.hideWatched,
+          googleSheetsWatchlistSyncEnabled:
+            data?.googleSheetsWatchlistSyncEnabled,
+          googleSheetsWatchedSyncEnabled: data?.googleSheetsWatchedSyncEnabled,
           traktHistorySyncEnabled: data?.traktHistorySyncEnabled,
           traktWatchlistSyncEnabled: data?.traktWatchlistSyncEnabled,
         }}
@@ -269,6 +304,10 @@ const UserGeneralSettings = () => {
               watchlistSyncMovies: values.watchlistSyncMovies,
               watchlistSyncTv: values.watchlistSyncTv,
               hideWatched: values.hideWatched,
+              googleSheetsWatchlistSyncEnabled:
+                values.googleSheetsWatchlistSyncEnabled,
+              googleSheetsWatchedSyncEnabled:
+                values.googleSheetsWatchedSyncEnabled,
               traktHistorySyncEnabled: values.traktHistorySyncEnabled,
               traktWatchlistSyncEnabled: values.traktWatchlistSyncEnabled,
             });
@@ -312,6 +351,7 @@ const UserGeneralSettings = () => {
             }
           } finally {
             revalidate();
+            revalidateGoogleSheetsStatus();
             revalidateUser();
             revalidateTraktHistoryStatus();
           }
@@ -1070,6 +1110,273 @@ const UserGeneralSettings = () => {
                             <span>
                               {intl.formatMessage(
                                 messages.traktHistoryForceResync
+                              )}
+                            </span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+              {(currentSettings.googleSheetsEnabled ||
+                !!googleSheetsStatus?.linked) && (
+                <>
+                  <div className="form-row">
+                    <label
+                      htmlFor="googleSheetsWatchlistSyncEnabled"
+                      className="checkbox-label"
+                    >
+                      <span>
+                        {intl.formatMessage(messages.googleSheetsWatchlistSync)}
+                      </span>
+                      <span className="label-tip">
+                        {intl.formatMessage(
+                          messages.googleSheetsWatchlistSyncTip
+                        )}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
+                      <input
+                        type="checkbox"
+                        id="googleSheetsWatchlistSyncEnabled"
+                        name="googleSheetsWatchlistSyncEnabled"
+                        checked={!!values.googleSheetsWatchlistSyncEnabled}
+                        onChange={() => {
+                          setFieldValue(
+                            'googleSheetsWatchlistSyncEnabled',
+                            !values.googleSheetsWatchlistSyncEnabled
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="text-label" />
+                    <div className="form-input-area">
+                      <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
+                        <div className="mt-2 text-sm text-gray-400">
+                          {googleSheetsStatus?.linked && user?.traktUsername
+                            ? `${intl.formatMessage(
+                                messages.googleSheetsWatchlistStatusLastSuccess
+                              )}: ${formatDateTime(
+                                googleSheetsStatus?.watchlist
+                                  ?.lastSuccessfulSyncAt
+                              )}`
+                            : intl.formatMessage(
+                                messages.googleSheetsWatchlistStatusConnected
+                              )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.googleSheetsWatchlistSheet
+                          )}
+                          :{' '}
+                          {googleSheetsStatus?.watchlist?.spreadsheetUrl ? (
+                            <a
+                              href={googleSheetsStatus.watchlist.spreadsheetUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-white transition duration-300 hover:underline"
+                            >
+                              {googleSheetsStatus.watchlist.spreadsheetId}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.googleSheetsWatchlistStatusLastAttempt
+                          )}
+                          :{' '}
+                          {formatDateTime(
+                            googleSheetsStatus?.watchlist?.lastAttemptedSyncAt
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.googleSheetsWatchlistStatusLastError
+                          )}
+                          : {googleSheetsStatus?.watchlist?.lastError ?? '—'}
+                        </div>
+                        <div className="mt-4">
+                          <Button
+                            buttonType="ghost"
+                            type="button"
+                            disabled={
+                              !googleSheetsStatus?.linked ||
+                              !user?.traktUsername ||
+                              !values.googleSheetsWatchlistSyncEnabled
+                            }
+                            onClick={async () => {
+                              try {
+                                const response =
+                                  await axios.post<GoogleSheetsSyncStatusResponse>(
+                                    `/api/v1/user/${user?.id}/settings/google-sheets/watchlist/sync`
+                                  );
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.googleSheetsWatchlistSyncSuccess
+                                  ),
+                                  {
+                                    appearance: 'success',
+                                    autoDismiss: true,
+                                  }
+                                );
+                                revalidateGoogleSheetsStatus(
+                                  response.data,
+                                  false
+                                );
+                                revalidateTraktWatchlistStatus();
+                              } catch {
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.googleSheetsWatchlistSyncFailure
+                                  ),
+                                  {
+                                    appearance: 'error',
+                                    autoDismiss: true,
+                                  }
+                                );
+                              }
+                            }}
+                          >
+                            <ArrowPathIcon className="mr-2 h-5 w-5" />
+                            <span>
+                              {intl.formatMessage(
+                                messages.googleSheetsWatchlistSyncNow
+                              )}
+                            </span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <label
+                      htmlFor="googleSheetsWatchedSyncEnabled"
+                      className="checkbox-label"
+                    >
+                      <span>
+                        {intl.formatMessage(messages.googleSheetsWatchedSync)}
+                      </span>
+                      <span className="label-tip">
+                        {intl.formatMessage(
+                          messages.googleSheetsWatchedSyncTip
+                        )}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
+                      <input
+                        type="checkbox"
+                        id="googleSheetsWatchedSyncEnabled"
+                        name="googleSheetsWatchedSyncEnabled"
+                        checked={!!values.googleSheetsWatchedSyncEnabled}
+                        onChange={() => {
+                          setFieldValue(
+                            'googleSheetsWatchedSyncEnabled',
+                            !values.googleSheetsWatchedSyncEnabled
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="text-label" />
+                    <div className="form-input-area">
+                      <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
+                        <div className="mt-2 text-sm text-gray-400">
+                          {googleSheetsStatus?.linked && user?.traktUsername
+                            ? `${intl.formatMessage(
+                                messages.googleSheetsWatchedStatusLastSuccess
+                              )}: ${formatDateTime(
+                                googleSheetsStatus?.watched
+                                  ?.lastSuccessfulSyncAt
+                              )}`
+                            : intl.formatMessage(
+                                messages.googleSheetsWatchedStatusConnected
+                              )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.googleSheetsWatchedSheet
+                          )}
+                          :{' '}
+                          {googleSheetsStatus?.watched?.spreadsheetUrl ? (
+                            <a
+                              href={googleSheetsStatus.watched.spreadsheetUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-white transition duration-300 hover:underline"
+                            >
+                              {googleSheetsStatus.watched.spreadsheetId}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.googleSheetsWatchedStatusLastAttempt
+                          )}
+                          :{' '}
+                          {formatDateTime(
+                            googleSheetsStatus?.watched?.lastAttemptedSyncAt
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          {intl.formatMessage(
+                            messages.googleSheetsWatchedStatusLastError
+                          )}
+                          : {googleSheetsStatus?.watched?.lastError ?? '—'}
+                        </div>
+                        <div className="mt-4">
+                          <Button
+                            buttonType="ghost"
+                            type="button"
+                            disabled={
+                              !googleSheetsStatus?.linked ||
+                              !user?.traktUsername ||
+                              !values.googleSheetsWatchedSyncEnabled
+                            }
+                            onClick={async () => {
+                              try {
+                                const response =
+                                  await axios.post<GoogleSheetsSyncStatusResponse>(
+                                    `/api/v1/user/${user?.id}/settings/google-sheets/watched/sync`
+                                  );
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.googleSheetsWatchedSyncSuccess
+                                  ),
+                                  {
+                                    appearance: 'success',
+                                    autoDismiss: true,
+                                  }
+                                );
+                                revalidateGoogleSheetsStatus(
+                                  response.data,
+                                  false
+                                );
+                                revalidateTraktHistoryStatus();
+                              } catch {
+                                addToast(
+                                  intl.formatMessage(
+                                    messages.googleSheetsWatchedSyncFailure
+                                  ),
+                                  {
+                                    appearance: 'error',
+                                    autoDismiss: true,
+                                  }
+                                );
+                              }
+                            }}
+                          >
+                            <ArrowPathIcon className="mr-2 h-5 w-5" />
+                            <span>
+                              {intl.formatMessage(
+                                messages.googleSheetsWatchedSyncNow
                               )}
                             </span>
                           </Button>

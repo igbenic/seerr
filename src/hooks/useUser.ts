@@ -10,6 +10,8 @@ export { Permission, UserType };
 export type { PermissionCheckOptions };
 
 export interface User {
+  googleSheetsConnectedAt?: Date | null;
+  googleSheetsEmail?: string | null;
   id: number;
   warnings: string[];
   imdbAuthType?: 'password' | 'cookie' | null;
@@ -43,6 +45,8 @@ export interface UserSettings {
   watchlistSyncMovies?: boolean;
   watchlistSyncTv?: boolean;
   hideWatched?: boolean;
+  googleSheetsWatchlistSyncEnabled?: boolean;
+  googleSheetsWatchedSyncEnabled?: boolean;
   traktHistorySyncEnabled?: boolean;
 }
 

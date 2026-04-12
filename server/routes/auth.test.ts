@@ -4,7 +4,9 @@ import { before, beforeEach, describe, it, mock } from 'node:test';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
+import { UserSettings } from '@server/entity/UserSettings';
 import PreparedEmail from '@server/lib/email';
+import * as googleSheets from '@server/lib/googleSheets';
 import { getSettings } from '@server/lib/settings';
 import * as traktHistory from '@server/lib/traktHistory';
 import * as traktWatched from '@server/lib/traktWatched';
@@ -398,6 +400,306 @@ describe('Trakt auth routes', () => {
     assert.strictEqual(disconnectedUser.traktRefreshToken, null);
     assert.strictEqual(disconnectedUser.traktTokenExpiresAt, null);
     assert.strictEqual(disconnectedUser.traktConnectedAt, null);
+  });
+});
+
+describe('Google Sheets auth routes', () => {
+  beforeEach(() => {
+    const settings = getSettings();
+    settings.googleSheets.enabled = false;
+    settings.googleSheets.clientId = '';
+    settings.googleSheets.clientSecret = '';
+    settings.main.applicationUrl = '';
+  });
+
+  it('returns disconnected Google Sheets status when Google Sheets is not configured', async () => {
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get('/auth/google-sheets/status');
+
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body, {
+      connected: false,
+      connectedAt: null,
+      email: null,
+      enabled: false,
+    });
+  });
+
+  it('redirects to Google OAuth when Google Sheets is configured', async () => {
+    const settings = getSettings();
+    settings.googleSheets.enabled = true;
+    settings.googleSheets.clientId = 'google-client-id';
+    settings.googleSheets.clientSecret = 'google-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get(
+      '/auth/google-sheets/connect?redirect=/profile/settings/linked-accounts'
+    );
+
+    assert.strictEqual(res.status, 302);
+    assert.match(
+      res.headers.location,
+      /^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/
+    );
+    assert.match(res.headers.location, /client_id=google-client-id/);
+  });
+
+  it('rejects a callback with an invalid Google OAuth state', async () => {
+    const settings = getSettings();
+    settings.googleSheets.enabled = true;
+    settings.googleSheets.clientId = 'google-client-id';
+    settings.googleSheets.clientSecret = 'google-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    await agent.get(
+      '/auth/google-sheets/connect?redirect=/profile/settings/linked-accounts'
+    );
+
+    const res = await agent.get(
+      '/auth/google-sheets/callback?code=test-code&state=not-the-session-state'
+    );
+
+    assert.strictEqual(res.status, 302);
+    assert.strictEqual(
+      res.headers.location,
+      '/profile/settings/linked-accounts?googleSheets=invalid-state'
+    );
+  });
+
+  it('connects a Google Sheets account and keeps secret fields out of /auth/me', async () => {
+    const settings = getSettings();
+    settings.googleSheets.enabled = true;
+    settings.googleSheets.clientId = 'google-client-id';
+    settings.googleSheets.clientSecret = 'google-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+    const connectRes = await agent.get(
+      '/auth/google-sheets/connect?redirect=/profile/settings/linked-accounts'
+    );
+    const state = new URL(connectRes.headers.location).searchParams.get(
+      'state'
+    );
+    assert.ok(state);
+
+    const createOAuthClientMock = mock.method(
+      googleSheets,
+      'createGoogleSheetsOAuthClient',
+      () =>
+        ({
+          getToken: async () => ({
+            tokens: {
+              access_token: 'google-access-token',
+              expiry_date: new Date('2026-01-01T01:00:00.000Z').getTime(),
+              refresh_token: 'google-refresh-token',
+            },
+          }),
+          setCredentials: () => undefined,
+        }) as unknown as ReturnType<
+          typeof googleSheets.createGoogleSheetsOAuthClient
+        >
+    );
+    const getDriveProfileMock = mock.method(
+      googleSheets,
+      'getGoogleDriveProfile',
+      async () => ({
+        accountId: 'google-account-id',
+        email: 'google-user@example.com',
+      })
+    );
+
+    try {
+      const callbackRes = await agent.get(
+        `/auth/google-sheets/callback?code=test-code&state=${state}`
+      );
+
+      assert.strictEqual(callbackRes.status, 302);
+      assert.strictEqual(
+        callbackRes.headers.location,
+        '/profile/settings/linked-accounts?googleSheets=connected'
+      );
+
+      const userRepo = getRepository(User);
+      const linkedUser = await userRepo
+        .createQueryBuilder('user')
+        .addSelect([
+          'user.googleSheetsAccessToken',
+          'user.googleSheetsAccountId',
+          'user.googleSheetsRefreshToken',
+          'user.googleSheetsTokenExpiresAt',
+        ])
+        .where('user.email = :email', { email: 'admin@seerr.dev' })
+        .getOneOrFail();
+
+      assert.strictEqual(
+        linkedUser.googleSheetsEmail,
+        'google-user@example.com'
+      );
+      assert.strictEqual(linkedUser.googleSheetsAccountId, 'google-account-id');
+      assert.strictEqual(
+        linkedUser.googleSheetsAccessToken,
+        'google-access-token'
+      );
+      assert.strictEqual(
+        linkedUser.googleSheetsRefreshToken,
+        'google-refresh-token'
+      );
+      assert.ok(linkedUser.googleSheetsTokenExpiresAt);
+      assert.ok(linkedUser.googleSheetsConnectedAt);
+
+      const meRes = await agent.get('/auth/me');
+      assert.strictEqual(meRes.status, 200);
+      assert.ok(!('googleSheetsAccessToken' in meRes.body));
+      assert.ok(!('googleSheetsRefreshToken' in meRes.body));
+      assert.ok(!('googleSheetsAccountId' in meRes.body));
+      assert.strictEqual(
+        meRes.body.googleSheetsEmail,
+        'google-user@example.com'
+      );
+    } finally {
+      createOAuthClientMock.mock.restore();
+      getDriveProfileMock.mock.restore();
+    }
+  });
+
+  it('rejects linking a Google account that is already linked to another user', async () => {
+    const settings = getSettings();
+    settings.googleSheets.enabled = true;
+    settings.googleSheets.clientId = 'google-client-id';
+    settings.googleSheets.clientSecret = 'google-client-secret';
+    const userRepo = getRepository(User);
+    const admin = await userRepo.findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    admin.googleSheetsEmail = 'google-user@example.com';
+    await userRepo.save(admin);
+    await userRepo.update(admin.id, {
+      googleSheetsAccountId: 'google-account-id',
+    });
+
+    const agent = await authenticatedAgent('friend@seerr.dev', 'test1234');
+    const connectRes = await agent.get(
+      '/auth/google-sheets/connect?redirect=/profile/settings/linked-accounts'
+    );
+    const state = new URL(connectRes.headers.location).searchParams.get(
+      'state'
+    );
+    assert.ok(state);
+
+    const createOAuthClientMock = mock.method(
+      googleSheets,
+      'createGoogleSheetsOAuthClient',
+      () =>
+        ({
+          getToken: async () => ({
+            tokens: {
+              access_token: 'google-access-token',
+              expiry_date: new Date('2026-01-01T01:00:00.000Z').getTime(),
+              refresh_token: 'google-refresh-token',
+            },
+          }),
+          setCredentials: () => undefined,
+        }) as unknown as ReturnType<
+          typeof googleSheets.createGoogleSheetsOAuthClient
+        >
+    );
+    const getDriveProfileMock = mock.method(
+      googleSheets,
+      'getGoogleDriveProfile',
+      async () => ({
+        accountId: 'google-account-id',
+        email: 'google-user@example.com',
+      })
+    );
+
+    try {
+      const callbackRes = await agent.get(
+        `/auth/google-sheets/callback?code=test-code&state=${state}`
+      );
+
+      assert.strictEqual(callbackRes.status, 302);
+      assert.strictEqual(
+        callbackRes.headers.location,
+        '/profile/settings/linked-accounts?googleSheets=already-linked'
+      );
+    } finally {
+      createOAuthClientMock.mock.restore();
+      getDriveProfileMock.mock.restore();
+    }
+  });
+
+  it('disconnects a linked Google Sheets account and clears sync metadata', async () => {
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+    const userRepo = getRepository(User);
+    const user = await userRepo.findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    user.googleSheetsConnectedAt = new Date('2026-01-01T00:00:00.000Z');
+    user.googleSheetsEmail = 'google-user@example.com';
+    user.settings ??= new UserSettings({ user });
+    user.settings.googleSheetsWatchlistLastError = 'boom';
+    user.settings.googleSheetsWatchlistLastSyncAt = new Date(
+      '2026-01-01T02:00:00.000Z'
+    );
+    user.settings.googleSheetsWatchlistLastSyncAttemptAt = new Date(
+      '2026-01-01T02:00:00.000Z'
+    );
+    user.settings.googleSheetsWatchlistSpreadsheetId = 'watchlist-sheet-id';
+    user.settings.googleSheetsWatchedLastError = 'boom';
+    user.settings.googleSheetsWatchedLastSyncAt = new Date(
+      '2026-01-01T03:00:00.000Z'
+    );
+    user.settings.googleSheetsWatchedLastSyncAttemptAt = new Date(
+      '2026-01-01T03:00:00.000Z'
+    );
+    user.settings.googleSheetsWatchedSpreadsheetId = 'watched-sheet-id';
+    await userRepo.save(user);
+    await userRepo.update(user.id, {
+      googleSheetsAccessToken: 'google-access-token',
+      googleSheetsAccountId: 'google-account-id',
+      googleSheetsRefreshToken: 'google-refresh-token',
+      googleSheetsTokenExpiresAt: new Date('2026-01-01T01:00:00.000Z'),
+    });
+
+    const res = await agent.delete('/auth/google-sheets/disconnect');
+
+    assert.strictEqual(res.status, 204);
+
+    const disconnectedUser = await userRepo
+      .createQueryBuilder('user')
+      .addSelect([
+        'user.googleSheetsAccessToken',
+        'user.googleSheetsAccountId',
+        'user.googleSheetsRefreshToken',
+        'user.googleSheetsTokenExpiresAt',
+      ])
+      .leftJoinAndSelect('user.settings', 'settings')
+      .where('user.email = :email', { email: 'admin@seerr.dev' })
+      .getOneOrFail();
+
+    assert.strictEqual(disconnectedUser.googleSheetsEmail, null);
+    assert.strictEqual(disconnectedUser.googleSheetsAccountId, null);
+    assert.strictEqual(disconnectedUser.googleSheetsAccessToken, null);
+    assert.strictEqual(disconnectedUser.googleSheetsRefreshToken, null);
+    assert.strictEqual(disconnectedUser.googleSheetsTokenExpiresAt, null);
+    assert.strictEqual(disconnectedUser.googleSheetsConnectedAt, null);
+    assert.strictEqual(
+      disconnectedUser.settings?.googleSheetsWatchlistSpreadsheetId,
+      null
+    );
+    assert.strictEqual(
+      disconnectedUser.settings?.googleSheetsWatchedSpreadsheetId,
+      null
+    );
+    assert.strictEqual(
+      disconnectedUser.settings?.googleSheetsWatchlistLastError,
+      null
+    );
+    assert.strictEqual(
+      disconnectedUser.settings?.googleSheetsWatchedLastError,
+      null
+    );
   });
 });
 

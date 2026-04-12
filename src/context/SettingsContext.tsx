@@ -12,6 +12,7 @@ const defaultSettings = {
   initialized: false,
   applicationTitle: 'Seerr',
   applicationUrl: '',
+  googleSheetsEnabled: false,
   hideAvailable: false,
   hideBlocklisted: false,
   localLogin: true,

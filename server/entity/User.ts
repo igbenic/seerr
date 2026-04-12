@@ -41,6 +41,10 @@ export class User {
 
   static readonly filteredFields: string[] = [
     'email',
+    'googleSheetsAccessToken',
+    'googleSheetsAccountId',
+    'googleSheetsRefreshToken',
+    'googleSheetsTokenExpiresAt',
     'imdbCookieAtMain',
     'imdbPassword',
     'plexId',
@@ -137,6 +141,24 @@ export class User {
 
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public imdbLastImportAt?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true, unique: true, select: false })
+  public googleSheetsAccountId?: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  public googleSheetsEmail?: string | null;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public googleSheetsAccessToken?: string | null;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public googleSheetsRefreshToken?: string | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true, select: false })
+  public googleSheetsTokenExpiresAt?: Date | null;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public googleSheetsConnectedAt?: Date | null;
 
   @Column({ type: 'integer', default: 0 })
   public permissions = 0;

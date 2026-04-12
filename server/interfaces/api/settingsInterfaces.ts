@@ -26,6 +26,7 @@ export interface PublicSettingsResponse {
   jellyfinExternalHost?: string;
   jellyfinServerName?: string;
   jellyfinForgotPasswordUrl?: string;
+  googleSheetsEnabled: boolean;
   traktEnabled: boolean;
   initialized: boolean;
   applicationTitle: string;

@@ -13,6 +13,7 @@ const messages = defineMessages('components.Settings', {
   menuPlexSettings: 'Plex',
   menuJellyfinSettings: '{mediaServerName}',
   menuTraktSettings: 'Trakt',
+  menuGoogleSheetsSettings: 'Google Sheets',
   menuServices: 'Services',
   menuNetwork: 'Network',
   menuNotifications: 'Notifications',
@@ -55,6 +56,11 @@ const SettingsLayout = ({ children }: SettingsLayoutProps) => {
       text: intl.formatMessage(messages.menuTraktSettings),
       route: '/settings/trakt',
       regex: /^\/settings\/trakt/,
+    },
+    {
+      text: intl.formatMessage(messages.menuGoogleSheetsSettings),
+      route: '/settings/google-sheets',
+      regex: /^\/settings\/google-sheets/,
     },
     {
       text: intl.formatMessage(messages.menuServices),

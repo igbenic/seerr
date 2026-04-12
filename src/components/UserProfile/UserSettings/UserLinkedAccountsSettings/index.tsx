@@ -12,8 +12,10 @@ import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
+import { TableCellsIcon } from '@heroicons/react/24/outline';
 import { TrashIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
+import type { GoogleSheetsAuthStatusResponse } from '@server/interfaces/api/googleSheetsInterfaces';
 import axios from 'axios';
 import { useRouter } from 'next/router';
 import { useMemo, useState } from 'react';
@@ -42,6 +44,13 @@ const messages = defineMessages(
     traktInvalidState:
       'The Trakt sign-in callback could not be validated. Please try again.',
     traktError: 'Unable to complete the Trakt connection.',
+    googleSheetsConnected: 'Google Sheets account connected successfully.',
+    googleSheetsDisconnected: 'Google Sheets account disconnected.',
+    googleSheetsAlreadyLinked:
+      'That Google Sheets account is already linked to another user.',
+    googleSheetsInvalidState:
+      'The Google Sheets sign-in callback could not be validated. Please try again.',
+    googleSheetsError: 'Unable to complete the Google Sheets connection.',
     imdbImport: 'Import IMDb CSV',
   }
 );
@@ -53,6 +62,7 @@ enum LinkedAccountType {
   Jellyfin = 'Jellyfin',
   Emby = 'Emby',
   Trakt = 'Trakt',
+  GoogleSheets = 'Google Sheets',
 }
 
 type LinkedAccount = {
@@ -73,6 +83,10 @@ const UserLinkedAccountsSettings = () => {
   const { data: passwordInfo } = useSWR<{ hasPassword: boolean }>(
     user ? `/api/v1/user/${user?.id}/settings/password` : null
   );
+  const { data: googleSheetsAuthStatus, mutate: revalidateGoogleSheetsStatus } =
+    useSWR<GoogleSheetsAuthStatusResponse>(
+      currentUser?.id === user?.id ? '/api/v1/auth/google-sheets/status' : null
+    );
   const [showImdbImportModal, setShowImdbImportModal] = useState(false);
   const [showJellyfinModal, setShowJellyfinModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +94,10 @@ const UserLinkedAccountsSettings = () => {
   const applicationName = settings.currentSettings.applicationTitle;
   const traktResult =
     typeof router.query.trakt === 'string' ? router.query.trakt : undefined;
+  const googleSheetsResult =
+    typeof router.query.googleSheets === 'string'
+      ? router.query.googleSheets
+      : undefined;
 
   const accounts: LinkedAccount[] = useMemo(() => {
     const accounts: LinkedAccount[] = [];
@@ -105,8 +123,14 @@ const UserLinkedAccountsSettings = () => {
         username: user.traktUsername,
       });
     }
+    if (googleSheetsAuthStatus?.connected && googleSheetsAuthStatus.email) {
+      accounts.push({
+        type: LinkedAccountType.GoogleSheets,
+        username: googleSheetsAuthStatus.email,
+      });
+    }
     return accounts;
-  }, [user]);
+  }, [googleSheetsAuthStatus, user]);
 
   const traktAlert = useMemo(() => {
     switch (traktResult) {
@@ -140,6 +164,39 @@ const UserLinkedAccountsSettings = () => {
         return null;
     }
   }, [intl, traktResult]);
+
+  const googleSheetsAlert = useMemo(() => {
+    switch (googleSheetsResult) {
+      case 'connected':
+        return {
+          title: intl.formatMessage(messages.googleSheetsConnected),
+          type: 'info' as const,
+        };
+      case 'disconnected':
+        return {
+          title: intl.formatMessage(messages.googleSheetsDisconnected),
+          type: 'info' as const,
+        };
+      case 'already-linked':
+        return {
+          title: intl.formatMessage(messages.googleSheetsAlreadyLinked),
+          type: 'error' as const,
+        };
+      case 'invalid-state':
+        return {
+          title: intl.formatMessage(messages.googleSheetsInvalidState),
+          type: 'error' as const,
+        };
+      case 'error':
+      case 'not-configured':
+        return {
+          title: intl.formatMessage(messages.googleSheetsError),
+          type: 'error' as const,
+        };
+      default:
+        return null;
+    }
+  }, [googleSheetsResult, intl]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -204,12 +261,27 @@ const UserLinkedAccountsSettings = () => {
         !settings.currentSettings.traktEnabled ||
         accounts.some((a) => a.type === LinkedAccountType.Trakt),
     },
+    {
+      name: 'Google Sheets',
+      action: () => {
+        window.location.assign(
+          `/api/v1/auth/google-sheets/connect?redirect=${encodeURIComponent(
+            router.asPath
+          )}`
+        );
+      },
+      hide:
+        !settings.currentSettings.googleSheetsEnabled ||
+        !!googleSheetsAuthStatus?.connected,
+    },
   ].filter((l) => !l.hide);
 
   const deleteRequest = async (account: string) => {
     try {
       if (account === 'trakt') {
         await axios.delete('/api/v1/auth/trakt/disconnect');
+      } else if (account === 'google-sheets') {
+        await axios.delete('/api/v1/auth/google-sheets/disconnect');
       } else {
         await axios.delete(
           `/api/v1/user/${user?.id}/settings/linked-accounts/${account}`
@@ -220,6 +292,9 @@ const UserLinkedAccountsSettings = () => {
     }
 
     await revalidateUser();
+    if (currentUser?.id === user?.id) {
+      await revalidateGoogleSheetsStatus();
+    }
   };
 
   if (
@@ -243,6 +318,7 @@ const UserLinkedAccountsSettings = () => {
   }
 
   const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
+  const enableGoogleSheetsUnlink = currentUser?.id === user?.id;
   const enableTraktUnlink = currentUser?.id === user?.id;
 
   return (
@@ -267,29 +343,32 @@ const UserLinkedAccountsSettings = () => {
         </div>
         {currentUser?.id === user?.id &&
           (!!user?.traktUsername || !!linkable.length) && (
-          <div className="flex gap-2">
-            {!!user?.traktUsername && (
-              <Button
-                buttonType="ghost"
-                buttonSize="sm"
-                onClick={() => setShowImdbImportModal(true)}
-              >
-                {intl.formatMessage(messages.imdbImport)}
-              </Button>
-            )}
-            {!!linkable.length && (
-              <Dropdown text="Link Account" buttonType="ghost">
-                {linkable.map(({ name, action }) => (
-                  <Dropdown.Item key={name} onClick={action}>
-                    {name}
-                  </Dropdown.Item>
-                ))}
-              </Dropdown>
-            )}
-          </div>
-        )}
+            <div className="flex gap-2">
+              {!!user?.traktUsername && (
+                <Button
+                  buttonType="ghost"
+                  buttonSize="sm"
+                  onClick={() => setShowImdbImportModal(true)}
+                >
+                  {intl.formatMessage(messages.imdbImport)}
+                </Button>
+              )}
+              {!!linkable.length && (
+                <Dropdown text="Link Account" buttonType="ghost">
+                  {linkable.map(({ name, action }) => (
+                    <Dropdown.Item key={name} onClick={action}>
+                      {name}
+                    </Dropdown.Item>
+                  ))}
+                </Dropdown>
+              )}
+            </div>
+          )}
       </div>
       {traktAlert && <Alert title={traktAlert.title} type={traktAlert.type} />}
+      {googleSheetsAlert && (
+        <Alert title={googleSheetsAlert.title} type={googleSheetsAlert.type} />
+      )}
       {error && <Alert title={error} type="error" />}
       {accounts.length ? (
         <ul className="space-y-4">
@@ -307,6 +386,10 @@ const UserLinkedAccountsSettings = () => {
                   <EmbyLogo />
                 ) : acct.type === LinkedAccountType.Trakt ? (
                   <TraktLogo />
+                ) : acct.type === LinkedAccountType.GoogleSheets ? (
+                  <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800">
+                    <TableCellsIcon className="w-7 text-white" />
+                  </div>
                 ) : (
                   <JellyfinLogo />
                 )}
@@ -321,7 +404,10 @@ const UserLinkedAccountsSettings = () => {
               </div>
               <div className="flex-grow" />
               {((acct.type === LinkedAccountType.Trakt && enableTraktUnlink) ||
+                (acct.type === LinkedAccountType.GoogleSheets &&
+                  enableGoogleSheetsUnlink) ||
                 (acct.type !== LinkedAccountType.Trakt &&
+                  acct.type !== LinkedAccountType.GoogleSheets &&
                   enableMediaServerUnlink)) && (
                 <ConfirmButton
                   onClick={() => {
@@ -330,7 +416,9 @@ const UserLinkedAccountsSettings = () => {
                         ? 'plex'
                         : acct.type === LinkedAccountType.Trakt
                           ? 'trakt'
-                          : 'jellyfin'
+                          : acct.type === LinkedAccountType.GoogleSheets
+                            ? 'google-sheets'
+                            : 'jellyfin'
                     );
                   }}
                   confirmText={intl.formatMessage(globalMessages.areyousure)}

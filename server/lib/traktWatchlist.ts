@@ -7,6 +7,7 @@ import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import type { TraktWatchlistStatusResponse } from '@server/interfaces/api/userInterfaces';
+import { syncGoogleSheetsWatchlistIfEnabled } from '@server/lib/googleSheetsSync';
 import { getSettings } from '@server/lib/settings';
 import { clearTraktConnection, createTraktApiForUser } from '@server/lib/trakt';
 import { ensureTraktUserSettings } from '@server/lib/traktUserData';
@@ -197,6 +198,14 @@ export const syncTraktWatchlistForUser = async (
       label: 'Trakt Watchlist',
       totalItems: entries.length,
       userId,
+    });
+
+    await syncGoogleSheetsWatchlistIfEnabled(userId).catch((error) => {
+      logger.error('Google Sheets watchlist sync failed after Trakt sync', {
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        label: 'Google Sheets',
+        userId,
+      });
     });
 
     return getTraktWatchlistStatus(userId);

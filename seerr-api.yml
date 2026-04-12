@@ -237,6 +237,16 @@ components:
           nullable: true
           description: 'Enable Trakt watchlist sync for the user'
           example: true
+        googleSheetsWatchlistSyncEnabled:
+          type: boolean
+          nullable: true
+          description: 'Enable Google Sheets sync for the mirrored want-to-watch spreadsheet'
+          example: true
+        googleSheetsWatchedSyncEnabled:
+          type: boolean
+          nullable: true
+          description: 'Enable Google Sheets sync for the mirrored watched spreadsheet'
+          example: true
     TraktHistoryStatus:
       type: object
       properties:
@@ -877,9 +887,24 @@ components:
         initialized:
           type: boolean
           example: false
+        googleSheetsEnabled:
+          type: boolean
+          example: false
         traktEnabled:
           type: boolean
           example: false
+    GoogleSheetsSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        clientId:
+          type: string
+          example: google-client-id
+        clientSecret:
+          type: string
+          example: google-client-secret
     TraktSettings:
       type: object
       properties:
@@ -909,6 +934,59 @@ components:
           type: string
           nullable: true
           example: trakt-user
+    GoogleSheetsAuthStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          example: false
+        connectedAt:
+          type: string
+          nullable: true
+          example: '2026-03-24T12:00:00.000Z'
+        email:
+          type: string
+          nullable: true
+          example: user@example.com
+        enabled:
+          type: boolean
+          example: true
+    GoogleSheetsSyncTargetStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        spreadsheetId:
+          type: string
+          nullable: true
+          example: 1AbCdEfGhIjKlMnOpQrStUvWxYz
+        spreadsheetUrl:
+          type: string
+          nullable: true
+          example: https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz
+        lastAttemptedSyncAt:
+          type: string
+          nullable: true
+          example: '2026-03-25T15:30:00.000Z'
+        lastSuccessfulSyncAt:
+          type: string
+          nullable: true
+          example: '2026-03-25T15:30:05.000Z'
+        lastError:
+          type: string
+          nullable: true
+          example: null
+    GoogleSheetsSyncStatus:
+      type: object
+      properties:
+        linked:
+          type: boolean
+          example: true
+        watchlist:
+          $ref: '#/components/schemas/GoogleSheetsSyncTargetStatus'
+        watched:
+          $ref: '#/components/schemas/GoogleSheetsSyncTargetStatus'
     DiscoverWatchlistItem:
       type: object
       properties:
@@ -2606,6 +2684,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TraktSettings'
+  /settings/google-sheets:
+    get:
+      summary: Get Google Sheets settings
+      description: Retrieves the current Google Sheets integration settings.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleSheetsSettings'
+    post:
+      summary: Update Google Sheets settings
+      description: Updates Google Sheets integration settings with the provided values.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleSheetsSettings'
+      responses:
+        '200':
+          description: Values were successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleSheetsSettings'
   /settings/main/regenerate:
     post:
       summary: Get main settings with newly-generated API key
@@ -4341,6 +4450,62 @@ paths:
       responses:
         '204':
           description: Trakt disconnected
+  /auth/google-sheets/status:
+    get:
+      summary: Get Google Sheets connection status for the current user
+      tags:
+        - auth
+      responses:
+        '200':
+          description: Google Sheets auth status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleSheetsAuthStatus'
+  /auth/google-sheets/connect:
+    get:
+      summary: Begin Google Sheets OAuth flow
+      description: Redirects the current user to Google to approve Google Sheets access.
+      tags:
+        - auth
+      parameters:
+        - in: query
+          name: redirect
+          schema:
+            type: string
+            example: /profile/settings/linked-accounts
+          required: false
+      responses:
+        '302':
+          description: Redirect to Google OAuth authorization
+  /auth/google-sheets/callback:
+    get:
+      summary: Complete Google Sheets OAuth flow
+      description: Handles the Google Sheets OAuth callback and redirects the user back to Seerr.
+      tags:
+        - auth
+      parameters:
+        - in: query
+          name: code
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: state
+          schema:
+            type: string
+          required: true
+      responses:
+        '302':
+          description: Redirect to the linked accounts page with connection status
+  /auth/google-sheets/disconnect:
+    delete:
+      summary: Disconnect the current user's Google Sheets account
+      tags:
+        - auth
+      responses:
+        '204':
+          description: Google Sheets disconnected
   /auth/plex:
     post:
       summary: Sign in using a Plex token
@@ -5424,6 +5589,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TraktWatchlistStatus'
+  /user/{userId}/settings/google-sheets:
+    get:
+      summary: Get Google Sheets sync status for a user
+      description: Returns Google Sheets sync status for a specific user. Requires `MANAGE_USERS` permission if viewing other users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Google Sheets sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleSheetsSyncStatus'
+  /user/{userId}/settings/google-sheets/watchlist/sync:
+    post:
+      summary: Trigger Google Sheets want-to-watch sync for a user
+      description: Refreshes the local Trakt watchlist mirror and exports it to the user's Google Sheets want-to-watch spreadsheet.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Google Sheets sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleSheetsSyncStatus'
+  /user/{userId}/settings/google-sheets/watched/sync:
+    post:
+      summary: Trigger Google Sheets watched sync for a user
+      description: Refreshes the local Trakt watched-state mirror and exports unique watched titles to the user's Google Sheets watched spreadsheet.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Google Sheets sync status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleSheetsSyncStatus'
   /user/{userId}/settings/password:
     get:
       summary: Get password page informatiom

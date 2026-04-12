@@ -10,6 +10,7 @@ import { TraktWatchedEpisode } from '@server/entity/TraktWatchedEpisode';
 import { TraktWatchedMedia } from '@server/entity/TraktWatchedMedia';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import { syncGoogleSheetsWatchedIfEnabled } from '@server/lib/googleSheetsSync';
 import { clearTraktConnection, createTraktApiForUser } from '@server/lib/trakt';
 import {
   ensureTraktUserSettings,
@@ -258,6 +259,18 @@ export const syncTraktWatchStateForUser = async (
       label: 'Trakt Watch State',
       mediaItems: mediaRows.length,
       userId,
+    });
+
+    await syncGoogleSheetsWatchedIfEnabled(userId).catch((error) => {
+      logger.error(
+        'Google Sheets watched sync failed after Trakt watched-state sync',
+        {
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error',
+          label: 'Google Sheets',
+          userId,
+        }
+      );
     });
   } catch (error) {
     if (error instanceof TraktAuthenticationError) {

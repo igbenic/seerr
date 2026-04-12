@@ -235,6 +235,7 @@ CoreApp.getInitialProps = async (initialProps) => {
     initialized: false,
     applicationTitle: '',
     applicationUrl: '',
+    googleSheetsEnabled: false,
     hideAvailable: false,
     hideBlocklisted: false,
     movie4kEnabled: false,

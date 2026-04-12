@@ -21,6 +21,8 @@ export interface UserSettingsGeneralResponse {
   hideWatched?: boolean;
   traktHistorySyncEnabled?: boolean;
   traktWatchlistSyncEnabled?: boolean;
+  googleSheetsWatchlistSyncEnabled?: boolean;
+  googleSheetsWatchedSyncEnabled?: boolean;
 }
 
 export type NotificationAgentTypes = Record<NotificationAgentKey, number>;
