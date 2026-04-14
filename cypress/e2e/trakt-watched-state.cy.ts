@@ -133,4 +133,50 @@ describe('Trakt Watched State', () => {
       .first()
       .should('contain.text', 'Watched');
   });
+
+  it('renders watched badges on search results', () => {
+    cy.intercept('GET', '/api/v1/auth/me', (req) => {
+      req.continue((res) => {
+        res.body.traktUsername = 'trakt-user';
+        res.body.settings = {
+          ...res.body.settings,
+          traktHistorySyncEnabled: true,
+        };
+      });
+    }).as('getMe');
+    cy.intercept('GET', '/api/v1/search*', {
+      page: 1,
+      totalPages: 1,
+      totalResults: 1,
+      results: [
+        {
+          id: 438148,
+          mediaInfo: null,
+          mediaType: 'movie',
+          overview: 'A watched result',
+          posterPath: '/poster.jpg',
+          releaseDate: '2024-01-01',
+          title: 'The Search Result',
+          voteAverage: 7.5,
+        },
+      ],
+    }).as('getSearchResults');
+    cy.intercept('GET', '/api/v1/movie/438148', (req) => {
+      req.continue((res) => {
+        res.body.userWatchStatus = {
+          watched: true,
+          watchedAt: '2026-04-10T12:00:00.000Z',
+        };
+      });
+    }).as('getSearchMovie');
+
+    cy.visit('/search?query=the%20quarry');
+    cy.wait('@getMe');
+    cy.wait('@getSearchResults');
+    cy.wait('@getSearchMovie');
+
+    cy.get('[data-testid=title-card-watch-badge]')
+      .first()
+      .should('contain.text', 'Watched');
+  });
 });

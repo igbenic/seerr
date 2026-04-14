@@ -34,13 +34,15 @@ const ListView = ({
   mutateParent,
 }: ListViewProps) => {
   const intl = useIntl();
-  const { hasPermission } = useUser();
+  const { hasPermission, user } = useUser();
   useVerticalScroll(onScrollBottom, !isLoading && !isEmpty && !isReachingEnd);
 
   const blocklistVisibility = hasPermission(
     [Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST],
     { type: 'or' }
   );
+  const shouldLoadWatchState =
+    !!user?.traktUsername && !!user?.settings?.traktHistorySyncEnabled;
 
   return (
     <>
@@ -79,45 +81,49 @@ const ListView = ({
             switch (title.mediaType) {
               case 'movie':
                 titleCard = (
-                  <TitleCard
-                    key={title.id}
+                  <TmdbTitleCard
                     id={title.id}
+                    tmdbId={title.id}
+                    type={title.mediaType}
+                    canExpand
                     isAddedToWatchlist={
                       title.mediaInfo?.watchlists?.length ?? 0
                     }
-                    image={title.posterPath}
-                    status={title.mediaInfo?.status}
-                    summary={title.overview}
-                    title={title.title}
-                    userScore={title.voteAverage}
-                    year={title.releaseDate}
-                    mediaType={title.mediaType}
-                    inProgress={
-                      (title.mediaInfo?.downloadStatus ?? []).length > 0
-                    }
-                    canExpand
+                    loadDetails={shouldLoadWatchState}
+                    titleData={{
+                      image: title.posterPath,
+                      inProgress:
+                        (title.mediaInfo?.downloadStatus ?? []).length > 0,
+                      status: title.mediaInfo?.status,
+                      summary: title.overview,
+                      title: title.title,
+                      userScore: title.voteAverage,
+                      year: title.releaseDate,
+                    }}
                   />
                 );
                 break;
               case 'tv':
                 titleCard = (
-                  <TitleCard
-                    key={title.id}
+                  <TmdbTitleCard
                     id={title.id}
+                    tmdbId={title.id}
+                    type={title.mediaType}
+                    canExpand
                     isAddedToWatchlist={
                       title.mediaInfo?.watchlists?.length ?? 0
                     }
-                    image={title.posterPath}
-                    status={title.mediaInfo?.status}
-                    summary={title.overview}
-                    title={title.name}
-                    userScore={title.voteAverage}
-                    year={title.firstAirDate}
-                    mediaType={title.mediaType}
-                    inProgress={
-                      (title.mediaInfo?.downloadStatus ?? []).length > 0
-                    }
-                    canExpand
+                    loadDetails={shouldLoadWatchState}
+                    titleData={{
+                      image: title.posterPath,
+                      inProgress:
+                        (title.mediaInfo?.downloadStatus ?? []).length > 0,
+                      status: title.mediaInfo?.status,
+                      summary: title.overview,
+                      title: title.name,
+                      userScore: title.voteAverage,
+                      year: title.firstAirDate,
+                    }}
                   />
                 );
                 break;

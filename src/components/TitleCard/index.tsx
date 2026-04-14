@@ -16,6 +16,7 @@ import { withProperties } from '@app/utils/typeHelpers';
 import { Transition } from '@headlessui/react';
 import {
   ArrowDownTrayIcon,
+  CheckCircleIcon,
   EyeIcon,
   EyeSlashIcon,
   MinusCircleIcon,
@@ -283,6 +284,24 @@ const TitleCard = ({
   const showHideButton = hasPermission([Permission.MANAGE_BLOCKLIST], {
     type: 'or',
   });
+  const hasWatchState = !!watchStateLabel;
+  const hasWatchedBadge = hasWatchState && watchStateBadgeType === 'success';
+  const watchStateCardAccent = hasWatchState
+    ? hasWatchedBadge
+      ? showDetail
+        ? 'shadow-lg ring-green-400'
+        : 'shadow ring-green-500/70'
+      : showDetail
+        ? 'shadow-lg ring-indigo-400'
+        : 'shadow ring-indigo-500/70'
+    : showDetail
+      ? 'shadow-lg ring-gray-500'
+      : 'shadow ring-gray-700';
+  const watchStateOverlay = hasWatchState
+    ? hasWatchedBadge
+      ? 'from-green-900/55'
+      : 'from-indigo-900/55'
+    : 'from-transparent';
 
   return (
     <div
@@ -320,10 +339,8 @@ const TitleCard = ({
       />
       <div
         className={`relative transform-gpu cursor-default overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 ${
-          showDetail
-            ? 'scale-105 shadow-lg ring-gray-500'
-            : 'scale-100 shadow ring-gray-700'
-        }`}
+          showDetail ? 'scale-105' : 'scale-100'
+        } ${watchStateCardAccent}`}
         style={{
           paddingBottom: '150%',
         }}
@@ -355,6 +372,11 @@ const TitleCard = ({
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             fill
           />
+          {hasWatchState && (
+            <div
+              className={`pointer-events-none absolute inset-x-0 top-0 z-30 h-24 bg-gradient-to-b ${watchStateOverlay} to-transparent`}
+            />
+          )}
           <div className="absolute left-0 right-0 flex items-start justify-between p-2">
             <div className="flex flex-col items-start gap-1">
               <div
@@ -373,12 +395,20 @@ const TitleCard = ({
                 </div>
               </div>
               {watchStateLabel && (
-                <div data-testid="title-card-watch-badge">
+                <div
+                  data-testid="title-card-watch-badge"
+                  className="max-w-full"
+                >
                   <Badge
                     badgeType={watchStateBadgeType}
-                    className="pointer-events-none z-40 shadow-md"
+                    className="pointer-events-none z-40 max-w-full shadow-md backdrop-blur-sm"
                   >
-                    {watchStateLabel}
+                    <span className="inline-flex items-center gap-1">
+                      {hasWatchedBadge && (
+                        <CheckCircleIcon className="h-3.5 w-3.5" />
+                      )}
+                      <span>{watchStateLabel}</span>
+                    </span>
                   </Badge>
                 </div>
               )}
