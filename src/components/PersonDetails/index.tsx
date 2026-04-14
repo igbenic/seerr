@@ -4,7 +4,8 @@ import ImageFader from '@app/components/Common/ImageFader';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import ExternalLinkBlock from '@app/components/ExternalLinkBlock';
-import TitleCard from '@app/components/TitleCard';
+import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
+import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -33,10 +34,13 @@ const PersonDetails = () => {
   const intl = useIntl();
   const router = useRouter();
   const [currentMediaType, setCurrentMediaType] = useState<string>('all');
+  const { user } = useUser();
   const { data, error } = useSWR<PersonDetailsType>(
     `/api/v1/person/${router.query.personId}`
   );
   const [showBio, setShowBio] = useState(false);
+  const shouldLoadWatchState =
+    !!user?.traktUsername && !!user?.settings?.traktHistorySyncEnabled;
 
   const { data: combinedCredits, error: errorCombinedCredits } =
     useSWR<PersonCombinedCreditsResponse>(
@@ -169,21 +173,23 @@ const PersonDetails = () => {
         {sortedCast?.map((media, index) => {
           return (
             <li key={`list-cast-item-${media.id}-${index}`}>
-              <TitleCard
-                key={media.id}
+              <TmdbTitleCard
                 id={media.id}
-                title={media.mediaType === 'movie' ? media.title : media.name}
-                userScore={media.voteAverage}
-                year={
-                  media.mediaType === 'movie'
-                    ? media.releaseDate
-                    : media.firstAirDate
-                }
-                image={media.posterPath}
-                summary={media.overview}
-                mediaType={media.mediaType as 'movie' | 'tv'}
-                status={media.mediaInfo?.status}
+                tmdbId={media.id}
+                type={media.mediaType as 'movie' | 'tv'}
                 canExpand
+                loadDetails={shouldLoadWatchState}
+                titleData={{
+                  image: media.posterPath,
+                  status: media.mediaInfo?.status,
+                  summary: media.overview,
+                  title: media.mediaType === 'movie' ? media.title : media.name,
+                  userScore: media.voteAverage,
+                  year:
+                    media.mediaType === 'movie'
+                      ? media.releaseDate
+                      : media.firstAirDate,
+                }}
               />
               {media.character && (
                 <div className="mt-2 w-full truncate text-center text-xs text-gray-300">
@@ -210,21 +216,23 @@ const PersonDetails = () => {
         {sortedCrew?.map((media, index) => {
           return (
             <li key={`list-crew-item-${media.id}-${index}`}>
-              <TitleCard
-                key={media.id}
+              <TmdbTitleCard
                 id={media.id}
-                title={media.mediaType === 'movie' ? media.title : media.name}
-                userScore={media.voteAverage}
-                year={
-                  media.mediaType === 'movie'
-                    ? media.releaseDate
-                    : media.firstAirDate
-                }
-                image={media.posterPath}
-                summary={media.overview}
-                mediaType={media.mediaType as 'movie' | 'tv'}
-                status={media.mediaInfo?.status}
+                tmdbId={media.id}
+                type={media.mediaType as 'movie' | 'tv'}
                 canExpand
+                loadDetails={shouldLoadWatchState}
+                titleData={{
+                  image: media.posterPath,
+                  status: media.mediaInfo?.status,
+                  summary: media.overview,
+                  title: media.mediaType === 'movie' ? media.title : media.name,
+                  userScore: media.voteAverage,
+                  year:
+                    media.mediaType === 'movie'
+                      ? media.releaseDate
+                      : media.firstAirDate,
+                }}
               />
               {media.job && (
                 <div className="mt-2 w-full truncate text-center text-xs text-gray-300">

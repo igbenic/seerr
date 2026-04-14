@@ -179,4 +179,52 @@ describe('Trakt Watched State', () => {
       .first()
       .should('contain.text', 'Watched');
   });
+
+  it('renders watched badges on movie recommendation sliders', () => {
+    cy.intercept('GET', '/api/v1/auth/me', (req) => {
+      req.continue((res) => {
+        res.body.traktUsername = 'trakt-user';
+        res.body.settings = {
+          ...res.body.settings,
+          traktHistorySyncEnabled: true,
+        };
+      });
+    }).as('getMe');
+    cy.intercept('GET', '/api/v1/movie/438148/recommendations*', {
+      page: 1,
+      totalPages: 1,
+      totalResults: 1,
+      results: [
+        {
+          id: 361743,
+          mediaInfo: null,
+          mediaType: 'movie',
+          overview: 'A watched recommendation',
+          posterPath: '/poster.jpg',
+          releaseDate: '2025-01-01',
+          title: 'Top Recommendation',
+          voteAverage: 8.1,
+        },
+      ],
+    }).as('getMovieRecommendations');
+    cy.intercept('GET', '/api/v1/movie/361743', (req) => {
+      req.continue((res) => {
+        res.body.userWatchStatus = {
+          watched: true,
+          watchedAt: '2026-04-04T12:00:00.000Z',
+        };
+      });
+    }).as('getRecommendationCardMovie');
+
+    cy.visit('/movie/438148');
+    cy.wait('@getMe');
+    cy.wait('@getMovieRecommendations');
+    cy.wait('@getRecommendationCardMovie');
+
+    cy.contains('.slider-header', 'Recommendations')
+      .next('[data-testid=media-slider]')
+      .find('[data-testid=title-card-watch-badge]')
+      .first()
+      .should('contain.text', 'Watched');
+  });
 });

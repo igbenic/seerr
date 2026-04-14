@@ -5,7 +5,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import RequestModal from '@app/components/RequestModal';
 import Slider from '@app/components/Slider';
 import StatusBadge from '@app/components/StatusBadge';
-import TitleCard from '@app/components/TitleCard';
+import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -37,9 +37,11 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
   const intl = useIntl();
   const router = useRouter();
   const settings = useSettings();
-  const { hasPermission } = useUser();
+  const { hasPermission, user } = useUser();
   const [requestModal, setRequestModal] = useState(false);
   const [is4k, setIs4k] = useState(false);
+  const shouldLoadWatchState =
+    !!user?.traktUsername && !!user?.settings?.traktHistorySyncEnabled;
 
   const returnCollectionDownloadItems = (data: Collection | undefined) => {
     const [downloadStatus, downloadStatus4k] = [
@@ -354,17 +356,21 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
             return title;
           })
           .map((title) => (
-            <TitleCard
+            <TmdbTitleCard
               key={`collection-movie-${title.id}`}
               id={title.id}
+              tmdbId={title.id}
+              type={title.mediaType}
               isAddedToWatchlist={title.mediaInfo?.watchlists?.length ?? 0}
-              image={title.posterPath}
-              status={title.mediaInfo?.status}
-              summary={title.overview}
-              title={title.title}
-              userScore={title.voteAverage}
-              year={title.releaseDate}
-              mediaType={title.mediaType}
+              loadDetails={shouldLoadWatchState}
+              titleData={{
+                image: title.posterPath,
+                status: title.mediaInfo?.status,
+                summary: title.overview,
+                title: title.title,
+                userScore: title.voteAverage,
+                year: title.releaseDate,
+              }}
             />
           ))}
       />

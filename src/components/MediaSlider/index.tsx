@@ -1,7 +1,7 @@
 import ShowMoreCard from '@app/components/MediaSlider/ShowMoreCard';
 import PersonCard from '@app/components/PersonCard';
 import Slider from '@app/components/Slider';
-import TitleCard from '@app/components/TitleCard';
+import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
@@ -43,7 +43,7 @@ const MediaSlider = ({
   onNewTitles,
 }: MediaSliderProps) => {
   const settings = useSettings();
-  const { hasPermission } = useUser();
+  const { hasPermission, user } = useUser();
   const { data, error, setSize, size } = useSWRInfinite<MixedResult>(
     (pageIndex: number, previousPageData: MixedResult | null) => {
       if (previousPageData && pageIndex + 1 > previousPageData.totalPages) {
@@ -106,6 +106,8 @@ const MediaSlider = ({
     [Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST],
     { type: 'or' }
   );
+  const shouldLoadWatchState =
+    !!user?.traktUsername && !!user?.settings?.traktHistorySyncEnabled;
 
   const finalTitles = titles
     .slice(0, 20)
@@ -121,34 +123,42 @@ const MediaSlider = ({
       switch (title.mediaType) {
         case 'movie':
           return (
-            <TitleCard
+            <TmdbTitleCard
               key={title.id}
               id={title.id}
+              tmdbId={title.id}
+              type={title.mediaType}
               isAddedToWatchlist={title.mediaInfo?.watchlists?.length ?? 0}
-              image={title.posterPath}
-              status={title.mediaInfo?.status}
-              summary={title.overview}
-              title={title.title}
-              userScore={title.voteAverage}
-              year={title.releaseDate}
-              mediaType={title.mediaType}
-              inProgress={(title.mediaInfo?.downloadStatus ?? []).length > 0}
+              loadDetails={shouldLoadWatchState}
+              titleData={{
+                image: title.posterPath,
+                inProgress: (title.mediaInfo?.downloadStatus ?? []).length > 0,
+                status: title.mediaInfo?.status,
+                summary: title.overview,
+                title: title.title,
+                userScore: title.voteAverage,
+                year: title.releaseDate,
+              }}
             />
           );
         case 'tv':
           return (
-            <TitleCard
+            <TmdbTitleCard
               key={title.id}
               id={title.id}
+              tmdbId={title.id}
+              type={title.mediaType}
               isAddedToWatchlist={title.mediaInfo?.watchlists?.length ?? 0}
-              image={title.posterPath}
-              status={title.mediaInfo?.status}
-              summary={title.overview}
-              title={title.name}
-              userScore={title.voteAverage}
-              year={title.firstAirDate}
-              mediaType={title.mediaType}
-              inProgress={(title.mediaInfo?.downloadStatus ?? []).length > 0}
+              loadDetails={shouldLoadWatchState}
+              titleData={{
+                image: title.posterPath,
+                inProgress: (title.mediaInfo?.downloadStatus ?? []).length > 0,
+                status: title.mediaInfo?.status,
+                summary: title.overview,
+                title: title.name,
+                userScore: title.voteAverage,
+                year: title.firstAirDate,
+              }}
             />
           );
         case 'person':
