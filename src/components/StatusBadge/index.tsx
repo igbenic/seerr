@@ -14,6 +14,8 @@ import { useIntl } from 'react-intl';
 const messages = defineMessages('components.StatusBadge', {
   status: '{status}',
   status4k: '4K {status}',
+  downloading: 'Downloading {percent}%',
+  downloading4k: '4K Downloading {percent}%',
   playonplex: 'Play on {mediaServerName}',
   openinarr: 'Open in {arr}',
   managemedia: 'Manage {mediaType}',
@@ -51,9 +53,20 @@ const StatusBadge = ({
   let mediaLink: string | undefined;
   let mediaLinkDescription: string | undefined;
 
-  const calculateDownloadProgress = (media: DownloadingItem) => {
-    return Math.round(((media?.size - media?.sizeLeft) / media?.size) * 100);
+  const calculateDownloadProgress = (items: DownloadingItem[]) => {
+    const totalSize = items.reduce((acc, i) => acc + (i?.size ?? 0), 0);
+    if (totalSize <= 0) return 0;
+    const downloaded = items.reduce(
+      (acc, i) => acc + ((i?.size ?? 0) - (i?.sizeLeft ?? 0)),
+      0
+    );
+    return Math.max(
+      0,
+      Math.min(100, Math.round((downloaded / totalSize) * 100))
+    );
   };
+
+  const progressPercent = calculateDownloadProgress(downloadItem);
 
   if (
     mediaType &&
@@ -145,9 +158,7 @@ const StatusBadge = ({
             : 'bg-green-500/80'
       } transition-all duration-200 ease-in-out`}
       style={{
-        width: `${
-          downloadItem ? calculateDownloadProgress(downloadItem[0]) : 0
-        }%`,
+        width: `${progressPercent}%`,
       }}
     />
   );
@@ -178,14 +189,17 @@ const StatusBadge = ({
               }`}
             >
               <span>
-                {intl.formatMessage(
-                  is4k ? messages.status4k : messages.status,
-                  {
-                    status: inProgress
-                      ? intl.formatMessage(globalMessages.processing)
-                      : intl.formatMessage(globalMessages.available),
-                  }
-                )}
+                {inProgress
+                  ? intl.formatMessage(
+                      is4k ? messages.downloading4k : messages.downloading,
+                      { percent: progressPercent }
+                    )
+                  : intl.formatMessage(
+                      is4k ? messages.status4k : messages.status,
+                      {
+                        status: intl.formatMessage(globalMessages.available),
+                      }
+                    )}
               </span>
               {inProgress && (
                 <>
@@ -243,14 +257,19 @@ const StatusBadge = ({
               }`}
             >
               <span>
-                {intl.formatMessage(
-                  is4k ? messages.status4k : messages.status,
-                  {
-                    status: inProgress
-                      ? intl.formatMessage(globalMessages.processing)
-                      : intl.formatMessage(globalMessages.partiallyavailable),
-                  }
-                )}
+                {inProgress
+                  ? intl.formatMessage(
+                      is4k ? messages.downloading4k : messages.downloading,
+                      { percent: progressPercent }
+                    )
+                  : intl.formatMessage(
+                      is4k ? messages.status4k : messages.status,
+                      {
+                        status: intl.formatMessage(
+                          globalMessages.partiallyavailable
+                        ),
+                      }
+                    )}
               </span>
               {inProgress && (
                 <>
@@ -308,14 +327,17 @@ const StatusBadge = ({
               }`}
             >
               <span>
-                {intl.formatMessage(
-                  is4k ? messages.status4k : messages.status,
-                  {
-                    status: inProgress
-                      ? intl.formatMessage(globalMessages.processing)
-                      : intl.formatMessage(globalMessages.requested),
-                  }
-                )}
+                {inProgress
+                  ? intl.formatMessage(
+                      is4k ? messages.downloading4k : messages.downloading,
+                      { percent: progressPercent }
+                    )
+                  : intl.formatMessage(
+                      is4k ? messages.status4k : messages.status,
+                      {
+                        status: intl.formatMessage(globalMessages.requested),
+                      }
+                    )}
               </span>
               {inProgress && (
                 <>
@@ -395,14 +417,17 @@ const StatusBadge = ({
               }`}
             >
               <span>
-                {intl.formatMessage(
-                  is4k ? messages.status4k : messages.status,
-                  {
-                    status: inProgress
-                      ? intl.formatMessage(globalMessages.processing)
-                      : intl.formatMessage(globalMessages.deleted),
-                  }
-                )}
+                {inProgress
+                  ? intl.formatMessage(
+                      is4k ? messages.downloading4k : messages.downloading,
+                      { percent: progressPercent }
+                    )
+                  : intl.formatMessage(
+                      is4k ? messages.status4k : messages.status,
+                      {
+                        status: intl.formatMessage(globalMessages.deleted),
+                      }
+                    )}
               </span>
               {inProgress && (
                 <>
