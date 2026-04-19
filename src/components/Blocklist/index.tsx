@@ -97,7 +97,14 @@ const Blocklist = () => {
     // Remove the "page" query param from the URL
     // so that the "skip" query param on line 62 is empty
     // and the search returns results without skipping items
-    if (router.query.page) router.replace(router.basePath);
+    if (router.query.page) {
+      const queryWithoutPage = { ...router.query };
+      delete queryWithoutPage.page;
+      router.replace({
+        pathname: router.pathname,
+        query: queryWithoutPage,
+      });
+    }
 
     setSearchFilter(e.target.value as string);
   };

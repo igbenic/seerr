@@ -10,7 +10,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
-import { withBasePath } from '@app/utils/basePath';
+import { stripBasePath, withBasePath } from '@app/utils/basePath';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
 import { FolderIcon } from '@heroicons/react/24/outline';
@@ -255,7 +255,7 @@ const UserLinkedAccountsSettings = () => {
         window.location.assign(
           withBasePath(
             `/api/v1/auth/trakt/connect?redirect=${encodeURIComponent(
-              router.asPath
+              stripBasePath(router.asPath, router.basePath)
             )}`
           )
         );
@@ -270,7 +270,7 @@ const UserLinkedAccountsSettings = () => {
         window.location.assign(
           withBasePath(
             `/api/v1/auth/google-sheets/connect?redirect=${encodeURIComponent(
-              router.asPath
+              stripBasePath(router.asPath, router.basePath)
             )}`
           )
         );

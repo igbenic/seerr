@@ -1,6 +1,6 @@
 import getConfig from 'next/config';
 
-const normalizeBasePath = (value?: string | null): string => {
+export const normalizeBasePath = (value?: string | null): string => {
   if (!value) {
     return '';
   }
@@ -76,4 +76,26 @@ export const withBasePath = (
   }
 
   return normalizedPath === '/' ? basePath : `${basePath}${normalizedPath}`;
+};
+
+export const stripBasePath = (
+  path: string,
+  basePath = getConfiguredBasePath()
+): string => {
+  if (!path) {
+    return '';
+  }
+
+  const parsed = new URL(path, 'http://localhost');
+  let pathname = parsed.pathname || '/';
+
+  if (basePath) {
+    if (pathname === basePath) {
+      pathname = '/';
+    } else if (pathname.startsWith(`${basePath}/`)) {
+      pathname = pathname.slice(basePath.length) || '/';
+    }
+  }
+
+  return `${pathname}${parsed.search}${parsed.hash}`;
 };

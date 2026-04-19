@@ -25,7 +25,7 @@ import avatarproxy from '@server/routes/avatarproxy';
 import imageproxy from '@server/routes/imageproxy';
 import { appDataPermissions } from '@server/utils/appDataVolume';
 import { getAppVersion } from '@server/utils/appVersion';
-import { getBasePath, withBasePath } from '@server/utils/basePath';
+import { getBasePath, scopeServerRoute } from '@server/utils/basePath';
 import createCustomProxyAgent from '@server/utils/customProxyAgent';
 import { initializeDnsCache } from '@server/utils/dnsCache';
 import restartFlag from '@server/utils/restartFlag';
@@ -157,8 +157,7 @@ app
 
     const server = express();
     const basePath = getBasePath();
-    const scopedRoute = (route: string) =>
-      basePath ? [route, withBasePath(route, basePath)] : route;
+    const scopedRoute = (route: string) => scopeServerRoute(route, basePath);
 
     if (settings.network.trustProxy) {
       server.enable('trust proxy');

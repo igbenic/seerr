@@ -2,14 +2,20 @@
 
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
-import { getBasePathFromUrl, withBasePath } from '@app/utils/basePath';
+import {
+  getBasePathFromUrl,
+  getConfiguredBasePath,
+  withBasePath,
+} from '@app/utils/basePath';
 import { verifyAndResubscribePushSubscription } from '@app/utils/pushSubscriptionHelpers';
 import { useEffect } from 'react';
 
 const ServiceWorkerSetup = () => {
   const { user } = useUser();
   const { currentSettings } = useSettings();
-  const basePath = getBasePathFromUrl(currentSettings.applicationUrl);
+  const basePath =
+    getBasePathFromUrl(currentSettings.applicationUrl) ||
+    getConfiguredBasePath();
 
   useEffect(() => {
     if ('serviceWorker' in navigator && user?.id) {

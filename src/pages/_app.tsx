@@ -18,6 +18,7 @@ import {
   withBasePath,
 } from '@app/utils/basePath';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
+import { getInternalServerUrl } from '@app/utils/serverUrl';
 import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';
@@ -271,11 +272,10 @@ CoreApp.getInitialProps = async (initialProps) => {
   };
 
   if (ctx.res) {
+    const configuredBasePath = getConfiguredBasePath();
     // Check if app is initialized and redirect if necessary
     const response = await axios.get<PublicSettingsResponse>(
-      `http://${process.env.HOST || 'localhost'}:${
-        process.env.PORT || 5055
-      }/api/v1/settings/public`
+      getInternalServerUrl('/api/v1/settings/public')
     );
 
     currentSettings = response.data;
@@ -287,7 +287,8 @@ CoreApp.getInitialProps = async (initialProps) => {
         ctx.res.writeHead(307, {
           Location: withBasePath(
             '/setup',
-            getBasePathFromUrl(response.data.applicationUrl)
+            getBasePathFromUrl(response.data.applicationUrl) ||
+              configuredBasePath
           ),
         });
         ctx.res.end();
@@ -296,9 +297,7 @@ CoreApp.getInitialProps = async (initialProps) => {
       try {
         // Attempt to get the user by running a request to the local api
         const response = await axios.get<User>(
-          `http://${process.env.HOST || 'localhost'}:${
-            process.env.PORT || 5055
-          }/api/v1/auth/me`,
+          getInternalServerUrl('/api/v1/auth/me'),
           {
             headers:
               ctx.req && ctx.req.headers.cookie
@@ -312,7 +311,8 @@ CoreApp.getInitialProps = async (initialProps) => {
           ctx.res.writeHead(307, {
             Location: withBasePath(
               '/',
-              getBasePathFromUrl(currentSettings.applicationUrl)
+              getBasePathFromUrl(currentSettings.applicationUrl) ||
+                configuredBasePath
             ),
           });
           ctx.res.end();
@@ -325,7 +325,8 @@ CoreApp.getInitialProps = async (initialProps) => {
           ctx.res.writeHead(307, {
             Location: withBasePath(
               '/login',
-              getBasePathFromUrl(response.data.applicationUrl)
+              getBasePathFromUrl(response.data.applicationUrl) ||
+                configuredBasePath
             ),
           });
           ctx.res.end();

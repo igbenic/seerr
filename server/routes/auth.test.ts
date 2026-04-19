@@ -60,6 +60,10 @@ before(async () => {
 
 setupTestDb();
 
+beforeEach(() => {
+  delete process.env.BASE_URL;
+});
+
 /** Create a supertest agent that is logged in as the given user. */
 async function authenticatedAgent(email: string, password: string) {
   const agent = request.agent(app);
@@ -158,6 +162,25 @@ describe('Trakt auth routes', () => {
     assert.match(res.headers.location, /client_id=trakt-client-id/);
   });
 
+  it('includes the deployment base path in the Trakt callback URL', async () => {
+    process.env.BASE_URL = '/requests';
+    const settings = getSettings();
+    settings.trakt.enabled = true;
+    settings.trakt.clientId = 'trakt-client-id';
+    settings.trakt.clientSecret = 'trakt-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get(
+      '/auth/trakt/connect?redirect=/requests/profile/settings/linked-accounts'
+    );
+    const redirectUri = new URL(res.headers.location).searchParams.get(
+      'redirect_uri'
+    );
+
+    assert.ok(redirectUri);
+    assert.match(redirectUri, /\/requests\/api\/v1\/auth\/trakt\/callback$/);
+  });
+
   it('rejects a callback with an invalid OAuth state', async () => {
     const settings = getSettings();
     settings.trakt.enabled = true;
@@ -177,6 +200,29 @@ describe('Trakt auth routes', () => {
     assert.strictEqual(
       res.headers.location,
       '/profile/settings/linked-accounts?trakt=invalid-state'
+    );
+  });
+
+  it('emits subpath-safe Trakt callback redirects when BASE_URL is set', async () => {
+    process.env.BASE_URL = '/requests';
+    const settings = getSettings();
+    settings.trakt.enabled = true;
+    settings.trakt.clientId = 'trakt-client-id';
+    settings.trakt.clientSecret = 'trakt-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    await agent.get(
+      '/auth/trakt/connect?redirect=/requests/profile/settings/linked-accounts'
+    );
+
+    const res = await agent.get(
+      '/auth/trakt/callback?code=test-code&state=not-the-session-state'
+    );
+
+    assert.strictEqual(res.status, 302);
+    assert.strictEqual(
+      res.headers.location,
+      '/requests/profile/settings/linked-accounts?trakt=invalid-state'
     );
   });
 
@@ -445,6 +491,28 @@ describe('Google Sheets auth routes', () => {
     assert.match(res.headers.location, /client_id=google-client-id/);
   });
 
+  it('includes the deployment base path in the Google callback URL', async () => {
+    process.env.BASE_URL = '/requests';
+    const settings = getSettings();
+    settings.googleSheets.enabled = true;
+    settings.googleSheets.clientId = 'google-client-id';
+    settings.googleSheets.clientSecret = 'google-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get(
+      '/auth/google-sheets/connect?redirect=/requests/profile/settings/linked-accounts'
+    );
+    const redirectUri = new URL(res.headers.location).searchParams.get(
+      'redirect_uri'
+    );
+
+    assert.ok(redirectUri);
+    assert.match(
+      redirectUri,
+      /\/requests\/api\/v1\/auth\/google-sheets\/callback$/
+    );
+  });
+
   it('rejects a callback with an invalid Google OAuth state', async () => {
     const settings = getSettings();
     settings.googleSheets.enabled = true;
@@ -464,6 +532,29 @@ describe('Google Sheets auth routes', () => {
     assert.strictEqual(
       res.headers.location,
       '/profile/settings/linked-accounts?googleSheets=invalid-state'
+    );
+  });
+
+  it('emits subpath-safe Google callback redirects when BASE_URL is set', async () => {
+    process.env.BASE_URL = '/requests';
+    const settings = getSettings();
+    settings.googleSheets.enabled = true;
+    settings.googleSheets.clientId = 'google-client-id';
+    settings.googleSheets.clientSecret = 'google-client-secret';
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    await agent.get(
+      '/auth/google-sheets/connect?redirect=/requests/profile/settings/linked-accounts'
+    );
+
+    const res = await agent.get(
+      '/auth/google-sheets/callback?code=test-code&state=not-the-session-state'
+    );
+
+    assert.strictEqual(res.status, 302);
+    assert.strictEqual(
+      res.headers.location,
+      '/requests/profile/settings/linked-accounts?googleSheets=invalid-state'
     );
   });
 

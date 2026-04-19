@@ -35,7 +35,7 @@ import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
 import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
-import { withBasePath } from '@server/utils/basePath';
+import { toInternalAppPath, withBasePath } from '@server/utils/basePath';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
@@ -52,20 +52,9 @@ const getSafeAuthRedirectPath = (redirect?: string | string[]): string => {
     return DEFAULT_TRAKT_REDIRECT;
   }
 
-  try {
-    const parsed = new URL(redirect, 'http://localhost');
-
-    if (
-      parsed.origin !== 'http://localhost' ||
-      !parsed.pathname.startsWith('/')
-    ) {
-      return DEFAULT_TRAKT_REDIRECT;
-    }
-
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return DEFAULT_TRAKT_REDIRECT;
-  }
+  return toInternalAppPath(redirect, {
+    fallback: DEFAULT_TRAKT_REDIRECT,
+  });
 };
 
 const clearTraktOauthSession = (req: {
@@ -115,7 +104,7 @@ const buildAuthResultRedirect = ({
 
   parsed.searchParams.set(param, status);
 
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return withBasePath(`${parsed.pathname}${parsed.search}${parsed.hash}`);
 };
 
 authRoutes.get('/me', isAuthenticated(), async (req, res) => {

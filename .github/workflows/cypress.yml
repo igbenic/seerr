@@ -33,8 +33,22 @@ concurrency:
 
 jobs:
   cypress-run:
-    name: Cypress Run
+    name: Cypress Run (${{ matrix.deployment.name }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        deployment:
+          - name: root
+            base_path: ''
+            cypress_app_base_path: ''
+            cypress_base_url: 'http://localhost:5055'
+            wait_on_url: 'http://localhost:5055'
+          - name: requests
+            base_path: '/requests'
+            cypress_app_base_path: '/requests'
+            cypress_base_url: 'http://localhost:5055'
+            wait_on_url: 'http://localhost:5055/requests'
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -72,10 +86,13 @@ jobs:
           install: false
           build: pnpm cypress:build
           start: pnpm start
-          wait-on: 'http://localhost:5055'
+          wait-on: ${{ matrix.deployment.wait_on_url }}
           record: true
         env:
+          BASE_URL: ${{ matrix.deployment.base_path }}
+          CYPRESS_APP_BASE_PATH: ${{ matrix.deployment.cypress_app_base_path }}
           CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
+          CYPRESS_BASE_URL: ${{ matrix.deployment.cypress_base_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WITH_MIGRATIONS: true
           # Fix test titles in cypress dashboard

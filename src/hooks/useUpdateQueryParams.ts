@@ -1,3 +1,4 @@
+import { stripBasePath } from '@app/utils/basePath';
 import type { NextRouter } from 'next/router';
 import { useRouter } from 'next/router';
 import type { ParsedUrlQuery } from 'querystring';
@@ -79,8 +80,9 @@ export const mergeQueryString = (
     }
   });
 
-  const pathWithoutQuery = router.asPath.match(/(.*)\?.*/);
-  const asPath = pathWithoutQuery ? pathWithoutQuery[1] : router.asPath;
+  const currentAsPath = stripBasePath(router.asPath, router.basePath);
+  const pathWithoutQuery = currentAsPath.match(/(.*)\?.*/);
+  const asPath = pathWithoutQuery ? pathWithoutQuery[1] : currentAsPath;
 
   const pathname = `${router.pathname}${
     queryArray.length > 0 ? `?${queryArray.join('&')}` : ''
@@ -103,8 +105,9 @@ export const useQueryParams = (): UseQueryParamReturnedFunction => {
   return useCallback(
     (query: ParsedUrlQuery, routerAction: 'push' | 'replace' = 'push') => {
       const newRoute = mergeQueryString(router, query);
+      const currentAsPath = stripBasePath(router.asPath, router.basePath);
 
-      if (newRoute.path !== router.asPath) {
+      if (newRoute.path !== currentAsPath) {
         if (routerAction === 'replace') {
           router.replace(newRoute.pathname, newRoute.path);
         } else {

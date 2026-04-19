@@ -33,7 +33,7 @@ describe('TVDB Integration', () => {
     cy.get(SELECTORS.sidebarToggle).click();
     cy.get(SELECTORS.sidebarSettingsMobile).click();
     cy.get(
-      `${SELECTORS.settingsNavDesktop} a[href="${ROUTES.metadataSettings}"]`
+      `${SELECTORS.settingsNavDesktop} a[href$="${ROUTES.metadataSettings}"]`
     ).click();
   };
 

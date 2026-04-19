@@ -4,6 +4,7 @@ import { UserSettings } from '@server/entity/UserSettings';
 import type { GoogleSheetsAuthStatusResponse } from '@server/interfaces/api/googleSheetsInterfaces';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import { buildApplicationUrl } from '@server/utils/basePath';
 import { google, type drive_v3, type sheets_v4 } from 'googleapis';
 
 type GoogleSheetsAuthUser = User & {
@@ -37,8 +38,11 @@ export const buildGoogleSheetsRedirectUri = ({
   host: string;
   protocol: string;
 }) => {
-  const applicationUrl = getSettings().main.applicationUrl?.trim();
-  const baseUrl = applicationUrl || `${protocol}://${host}`;
+  const baseUrl = buildApplicationUrl({
+    applicationUrl: getSettings().main.applicationUrl,
+    host,
+    protocol,
+  });
 
   return `${baseUrl.replace(/\/$/, '')}/api/v1/auth/google-sheets/callback`;
 };

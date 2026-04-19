@@ -24,6 +24,7 @@ import {
   type MovieResult,
   type TvResult,
 } from '@server/models/Search';
+import { buildApplicationUrl } from '@server/utils/basePath';
 
 const TRAKT_PAGE_SIZE = 20;
 
@@ -96,8 +97,11 @@ export const buildTraktRedirectUri = ({
   host: string;
   protocol: string;
 }) => {
-  const applicationUrl = getSettings().main.applicationUrl?.trim();
-  const baseUrl = applicationUrl || `${protocol}://${host}`;
+  const baseUrl = buildApplicationUrl({
+    applicationUrl: getSettings().main.applicationUrl,
+    host,
+    protocol,
+  });
 
   return `${baseUrl.replace(/\/$/, '')}/api/v1/auth/trakt/callback`;
 };
