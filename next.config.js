@@ -1,9 +1,41 @@
 /**
  * @type {import('next').NextConfig}
  */
+const normalizeBasePath = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  let pathValue = value.trim();
+
+  if (!pathValue) {
+    return '';
+  }
+
+  try {
+    pathValue = new URL(pathValue, 'http://localhost').pathname;
+  } catch {
+    // Fall back to raw path normalization below.
+  }
+
+  if (pathValue === '/') {
+    return '';
+  }
+
+  if (!pathValue.startsWith('/')) {
+    pathValue = `/${pathValue}`;
+  }
+
+  return pathValue.replace(/\/+$/, '');
+};
+
+const basePath = normalizeBasePath(process.env.BASE_URL);
+
 module.exports = {
+  ...(basePath ? { basePath } : {}),
   env: {
     commitTag: process.env.COMMIT_TAG || 'local',
+    basePath,
   },
   images: {
     remotePatterns: [

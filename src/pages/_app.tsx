@@ -12,6 +12,11 @@ import { UserContext } from '@app/context/UserContext';
 import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
 import '@app/styles/globals.css';
+import {
+  getBasePathFromUrl,
+  getConfiguredBasePath,
+  withBasePath,
+} from '@app/utils/basePath';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
 import '@fontsource-variable/inter';
 import { MediaServerType } from '@server/constants/server';
@@ -126,6 +131,14 @@ const CoreApp: Omit<NextAppComponentType, 'origGetInitialProps'> = ({
   locale,
   currentSettings,
 }: ExtendedAppProps) => {
+  const appBasePath =
+    getBasePathFromUrl(currentSettings.applicationUrl) ||
+    getConfiguredBasePath();
+
+  if (typeof window !== 'undefined') {
+    axios.defaults.baseURL = appBasePath || '';
+  }
+
   let component: React.ReactNode;
   const [loadedMessages, setMessages] = useState<MessagesType>(messages);
   const [currentLocale, setLocale] = useState<AvailableLocale>(locale);
@@ -273,7 +286,10 @@ CoreApp.getInitialProps = async (initialProps) => {
     if (!initialized) {
       if (!router.pathname.match(/(setup|login\/plex)/)) {
         ctx.res.writeHead(307, {
-          Location: '/setup',
+          Location: withBasePath(
+            '/setup',
+            getBasePathFromUrl(response.data.applicationUrl)
+          ),
         });
         ctx.res.end();
       }
@@ -295,7 +311,10 @@ CoreApp.getInitialProps = async (initialProps) => {
 
         if (router.pathname.match(/(setup|login)/)) {
           ctx.res.writeHead(307, {
-            Location: '/',
+            Location: withBasePath(
+              '/',
+              getBasePathFromUrl(currentSettings.applicationUrl)
+            ),
           });
           ctx.res.end();
         }
@@ -305,7 +324,10 @@ CoreApp.getInitialProps = async (initialProps) => {
         // before anything actually renders
         if (!router.pathname.match(/(login|setup|resetpassword)/)) {
           ctx.res.writeHead(307, {
-            Location: '/login',
+            Location: withBasePath(
+              '/login',
+              getBasePathFromUrl(response.data.applicationUrl)
+            ),
           });
           ctx.res.end();
         }

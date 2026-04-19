@@ -2,17 +2,19 @@
 
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
+import { getBasePathFromUrl, withBasePath } from '@app/utils/basePath';
 import { verifyAndResubscribePushSubscription } from '@app/utils/pushSubscriptionHelpers';
 import { useEffect } from 'react';
 
 const ServiceWorkerSetup = () => {
   const { user } = useUser();
   const { currentSettings } = useSettings();
+  const basePath = getBasePathFromUrl(currentSettings.applicationUrl);
 
   useEffect(() => {
     if ('serviceWorker' in navigator && user?.id) {
       navigator.serviceWorker
-        .register('/sw.js')
+        .register(withBasePath('/sw.js', basePath))
         .then(async (registration) => {
           console.log(
             '[SW] Registration successful, scope is:',
@@ -64,7 +66,7 @@ const ServiceWorkerSetup = () => {
           console.log('[SW] Service worker registration failed, error:', error);
         });
     }
-  }, [currentSettings, user]);
+  }, [basePath, currentSettings, user]);
   return null;
 };
 

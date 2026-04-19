@@ -10,6 +10,7 @@ import LocalLogin from '@app/components/Login/LocalLogin';
 import PlexLoginButton from '@app/components/Login/PlexLoginButton';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
+import { withBasePath } from '@app/utils/basePath';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
@@ -129,7 +130,7 @@ const Login = () => {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/os_icon.svg"
+              src={withBasePath('/os_icon.svg')}
               alt={settings.currentSettings.applicationTitle}
               className="mr-2 h-5"
             />

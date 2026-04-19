@@ -25,6 +25,7 @@ import avatarproxy from '@server/routes/avatarproxy';
 import imageproxy from '@server/routes/imageproxy';
 import { appDataPermissions } from '@server/utils/appDataVolume';
 import { getAppVersion } from '@server/utils/appVersion';
+import { getBasePath, withBasePath } from '@server/utils/basePath';
 import createCustomProxyAgent from '@server/utils/customProxyAgent';
 import { initializeDnsCache } from '@server/utils/dnsCache';
 import restartFlag from '@server/utils/restartFlag';
@@ -155,6 +156,10 @@ app
     await DiscoverSlider.bootstrapSliders();
 
     const server = express();
+    const basePath = getBasePath();
+    const scopedRoute = (route: string) =>
+      basePath ? [route, withBasePath(route, basePath)] : route;
+
     if (settings.network.trustProxy) {
       server.enable('trust proxy');
     }
@@ -219,8 +224,19 @@ app
       })
     );
     const apiDocs = YAML.load(API_SPEC_PATH);
-    server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
+    if (basePath) {
+      server.get('/', (_req, res) => {
+        res.redirect(307, basePath);
+      });
+    }
+
     server.use(
+      scopedRoute('/api-docs'),
+      swaggerUi.serve,
+      swaggerUi.setup(apiDocs)
+    );
+    server.use(
+      scopedRoute('/'),
       OpenApiValidator.middleware({
         apiSpec: API_SPEC_PATH,
         validateRequests: true,
@@ -238,11 +254,11 @@ app
       };
       next();
     });
-    server.use('/api/v1', routes);
+    server.use(scopedRoute('/api/v1'), routes);
 
     // Do not set cookies so CDNs can cache them
-    server.use('/imageproxy', clearCookies, imageproxy);
-    server.use('/avatarproxy', clearCookies, avatarproxy);
+    server.use(scopedRoute('/imageproxy'), clearCookies, imageproxy);
+    server.use(scopedRoute('/avatarproxy'), clearCookies, avatarproxy);
 
     server.get('*', (req, res) => handle(req, res));
     server.use(
