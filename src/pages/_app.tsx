@@ -18,7 +18,6 @@ import {
   withBasePath,
 } from '@app/utils/basePath';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
-import '@fontsource-variable/inter';
 import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';

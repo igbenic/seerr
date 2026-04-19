@@ -1,3 +1,5 @@
+import getConfig from 'next/config';
+
 const normalizeBasePath = (value?: string | null): string => {
   if (!value) {
     return '';
@@ -26,8 +28,24 @@ const normalizeBasePath = (value?: string | null): string => {
   return pathValue.replace(/\/+$/, '');
 };
 
-export const getConfiguredBasePath = (): string =>
-  normalizeBasePath(process.env.basePath);
+const getRuntimeBasePath = (): string => {
+  try {
+    return normalizeBasePath(getConfig()?.publicRuntimeConfig?.basePath);
+  } catch {
+    return '';
+  }
+};
+
+export const getConfiguredBasePath = (): string => {
+  const configuredBasePath = [
+    getRuntimeBasePath(),
+    process.env.NEXT_PUBLIC_BASE_PATH,
+    process.env.BASE_URL,
+    process.env.basePath,
+  ].find((value) => !!value);
+
+  return normalizeBasePath(configuredBasePath);
+};
 
 export const getBasePathFromUrl = (value?: string | null): string =>
   normalizeBasePath(value);
@@ -47,6 +65,13 @@ export const withBasePath = (
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
   if (!basePath) {
+    return normalizedPath;
+  }
+
+  if (
+    normalizedPath === basePath ||
+    normalizedPath.startsWith(`${basePath}/`)
+  ) {
     return normalizedPath;
   }
 

@@ -32,9 +32,13 @@ const normalizeBasePath = (value) => {
 const basePath = normalizeBasePath(process.env.BASE_URL);
 
 module.exports = {
-  ...(basePath ? { basePath } : {}),
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
+  publicRuntimeConfig: {
+    basePath,
+  },
   env: {
     commitTag: process.env.COMMIT_TAG || 'local',
+    NEXT_PUBLIC_BASE_PATH: basePath,
     basePath,
   },
   images: {

@@ -10,6 +10,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
+import { withBasePath } from '@app/utils/basePath';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
 import { FolderIcon } from '@heroicons/react/24/outline';
@@ -252,9 +253,11 @@ const UserLinkedAccountsSettings = () => {
       name: 'Trakt',
       action: () => {
         window.location.assign(
-          `/api/v1/auth/trakt/connect?redirect=${encodeURIComponent(
-            router.asPath
-          )}`
+          withBasePath(
+            `/api/v1/auth/trakt/connect?redirect=${encodeURIComponent(
+              router.asPath
+            )}`
+          )
         );
       },
       hide:
@@ -265,9 +268,11 @@ const UserLinkedAccountsSettings = () => {
       name: 'Google Drive',
       action: () => {
         window.location.assign(
-          `/api/v1/auth/google-sheets/connect?redirect=${encodeURIComponent(
-            router.asPath
-          )}`
+          withBasePath(
+            `/api/v1/auth/google-sheets/connect?redirect=${encodeURIComponent(
+              router.asPath
+            )}`
+          )
         );
       },
       hide:
