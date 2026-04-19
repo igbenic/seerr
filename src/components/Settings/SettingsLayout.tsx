@@ -13,7 +13,7 @@ const messages = defineMessages('components.Settings', {
   menuPlexSettings: 'Plex',
   menuJellyfinSettings: '{mediaServerName}',
   menuTraktSettings: 'Trakt',
-  menuGoogleSheetsSettings: 'Google Sheets',
+  menuGoogleSheetsSettings: 'Google Drive CSV',
   menuServices: 'Services',
   menuNetwork: 'Network',
   menuNotifications: 'Notifications',

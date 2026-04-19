@@ -24,6 +24,29 @@ type GoogleApis = NonNullable<
   Awaited<ReturnType<typeof googleSheets.createGoogleApisForUser>>
 >;
 
+const readDriveMediaBody = async (body: unknown): Promise<string> => {
+  if (typeof body === 'string') {
+    return body;
+  }
+
+  if (
+    body &&
+    typeof body === 'object' &&
+    Symbol.asyncIterator in body &&
+    typeof body[Symbol.asyncIterator] === 'function'
+  ) {
+    let content = '';
+
+    for await (const chunk of body as AsyncIterable<string | Buffer>) {
+      content += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    }
+
+    return content;
+  }
+
+  return '';
+};
+
 const seedLinkedGoogleUser = async ({
   userId = 1,
   watchlistEnabled = true,
@@ -71,73 +94,66 @@ const mockGoogleApis = ({
     watched: 'watched-sheet-id',
     watchlist: 'watchlist-sheet-id',
   },
+  existingFileMimeTypes = {},
   updateError,
 }: {
   spreadsheetIds?: {
     watched: string;
     watchlist: string;
   };
+  existingFileMimeTypes?: Record<string, string>;
   updateError?: Error;
 } = {}) => {
+  const createdCsvContents: string[] = [];
+  const updatedCsvContents: string[] = [];
   const driveFilesCreate = mock.fn(
-    async ({ requestBody }: { requestBody?: { name?: string } }) => ({
-      data: {
-        id:
-          requestBody?.name === 'Seerr - admin - Watched'
-            ? spreadsheetIds.watched
-            : spreadsheetIds.watchlist,
-      },
-    })
-  );
-  const spreadsheetsGet = mock.fn(async () => ({
-    data: {
-      sheets: [
-        {
-          properties: {
-            sheetId: 0,
-            title: 'Sheet1',
-          },
-        },
-      ],
-    },
-  }));
-  const valuesClear = mock.fn(async () => ({}));
-  const valuesUpdate = mock.fn(
     async ({
+      media,
       requestBody,
     }: {
-      requestBody?: { values?: (number | string)[][] };
+      media?: { body?: unknown };
+      requestBody?: { name?: string };
     }) => {
-      if (updateError) {
-        throw updateError;
-      }
+      createdCsvContents.push(await readDriveMediaBody(media?.body));
 
       return {
         data: {
-          updatedRows: requestBody?.values?.length ?? 0,
+          id:
+            requestBody?.name === 'Seerr - admin - Watched.csv'
+              ? spreadsheetIds.watched
+              : spreadsheetIds.watchlist,
         },
       };
     }
   );
-  const batchUpdate = mock.fn(async () => ({}));
+  const driveFilesGet = mock.fn(async ({ fileId }: { fileId?: string }) => ({
+    data: {
+      id: fileId,
+      mimeType: (fileId && existingFileMimeTypes[fileId]) ?? 'text/csv',
+    },
+  }));
+  const driveFilesUpdate = mock.fn(
+    async ({ media }: { media?: { body?: unknown } }) => {
+      updatedCsvContents.push(await readDriveMediaBody(media?.body));
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return { data: {} };
+    }
+  );
 
   const clients = {
     auth: {},
     drive: {
       files: {
         create: driveFilesCreate,
+        get: driveFilesGet,
+        update: driveFilesUpdate,
       },
     },
-    sheets: {
-      spreadsheets: {
-        batchUpdate,
-        get: spreadsheetsGet,
-        values: {
-          clear: valuesClear,
-          update: valuesUpdate,
-        },
-      },
-    },
+    sheets: {},
   } as unknown as GoogleApis;
 
   const createGoogleApisForUserMock = mock.method(
@@ -147,12 +163,12 @@ const mockGoogleApis = ({
   );
 
   return {
-    batchUpdate,
+    createdCsvContents,
     createGoogleApisForUserMock,
     driveFilesCreate,
-    spreadsheetsGet,
-    valuesClear,
-    valuesUpdate,
+    driveFilesGet,
+    driveFilesUpdate,
+    updatedCsvContents,
   };
 };
 
@@ -188,7 +204,7 @@ describe('Google Sheets sync', () => {
         year: 2025,
       }),
     ]);
-    const { driveFilesCreate, valuesUpdate } = mockGoogleApis();
+    const { createdCsvContents, driveFilesCreate } = mockGoogleApis();
 
     const status = await syncGoogleSheetsWatchlistForUser(1);
 
@@ -197,45 +213,16 @@ describe('Google Sheets sync', () => {
     assert.strictEqual(driveFilesCreate.mock.calls.length, 1);
     assert.strictEqual(
       driveFilesCreate.mock.calls[0]?.arguments[0]?.requestBody?.name,
-      'Seerr - admin - Want to Watch'
+      'Seerr - admin - Want to Watch.csv'
     );
-    assert.deepStrictEqual(
-      valuesUpdate.mock.calls[0]?.arguments[0]?.requestBody?.values,
+    assert.strictEqual(
+      createdCsvContents[0],
       [
-        [
-          'Title',
-          'Year',
-          'Media Type',
-          'Listed At',
-          'Rank',
-          'TMDB ID',
-          'Trakt ID',
-          'IMDb ID',
-          'TVDB ID',
-        ],
-        [
-          'First Movie',
-          2025,
-          'movie',
-          '2026-04-10T10:00:00.000Z',
-          1,
-          101,
-          1001,
-          'tt1000001',
-          '',
-        ],
-        [
-          'Second Show',
-          2026,
-          'tv',
-          '2026-04-10T11:00:00.000Z',
-          2,
-          202,
-          2002,
-          'tt2000001',
-          2202,
-        ],
-      ]
+        'Title,Year,Media Type,Listed At,Rank,TMDB ID,Trakt ID,IMDb ID,TVDB ID',
+        'First Movie,2025,movie,2026-04-10T10:00:00.000Z,1,101,1001,tt1000001,',
+        'Second Show,2026,tv,2026-04-10T11:00:00.000Z,2,202,2002,tt2000001,2202',
+        '',
+      ].join('\r\n')
     );
 
     const savedSettings = await getRepository(UserSettings).findOneOrFail({
@@ -266,7 +253,8 @@ describe('Google Sheets sync', () => {
         year: 2025,
       })
     );
-    const { driveFilesCreate, valuesUpdate } = mockGoogleApis();
+    const { driveFilesCreate, driveFilesUpdate, updatedCsvContents } =
+      mockGoogleApis();
 
     await syncGoogleSheetsWatchlistForUser(1);
 
@@ -292,33 +280,14 @@ describe('Google Sheets sync', () => {
 
     assert.strictEqual(status.watchlist.spreadsheetId, 'watchlist-sheet-id');
     assert.strictEqual(driveFilesCreate.mock.calls.length, 1);
-    assert.strictEqual(valuesUpdate.mock.calls.length, 2);
-    assert.deepStrictEqual(
-      valuesUpdate.mock.calls[1]?.arguments[0]?.requestBody?.values,
+    assert.strictEqual(driveFilesUpdate.mock.calls.length, 1);
+    assert.strictEqual(
+      updatedCsvContents[0],
       [
-        [
-          'Title',
-          'Year',
-          'Media Type',
-          'Listed At',
-          'Rank',
-          'TMDB ID',
-          'Trakt ID',
-          'IMDb ID',
-          'TVDB ID',
-        ],
-        [
-          'Replacement Show',
-          2027,
-          'tv',
-          '2026-04-11T10:00:00.000Z',
-          1,
-          303,
-          3003,
-          'tt3000003',
-          3303,
-        ],
-      ]
+        'Title,Year,Media Type,Listed At,Rank,TMDB ID,Trakt ID,IMDb ID,TVDB ID',
+        'Replacement Show,2027,tv,2026-04-11T10:00:00.000Z,1,303,3003,tt3000003,3303',
+        '',
+      ].join('\r\n')
     );
   });
 
@@ -349,7 +318,7 @@ describe('Google Sheets sync', () => {
         year: 2025,
       }),
     ]);
-    const { driveFilesCreate, valuesUpdate } = mockGoogleApis();
+    const { createdCsvContents, driveFilesCreate } = mockGoogleApis();
 
     const status = await syncGoogleSheetsWatchedForUser(1);
 
@@ -358,42 +327,16 @@ describe('Google Sheets sync', () => {
     assert.strictEqual(driveFilesCreate.mock.calls.length, 1);
     assert.strictEqual(
       driveFilesCreate.mock.calls[0]?.arguments[0]?.requestBody?.name,
-      'Seerr - admin - Watched'
+      'Seerr - admin - Watched.csv'
     );
-    assert.deepStrictEqual(
-      valuesUpdate.mock.calls[0]?.arguments[0]?.requestBody?.values,
+    assert.strictEqual(
+      createdCsvContents[0],
       [
-        [
-          'Title',
-          'Year',
-          'Media Type',
-          'Last Watched At',
-          'TMDB ID',
-          'Trakt ID',
-          'IMDb ID',
-          'TVDB ID',
-        ],
-        [
-          'Latest Show',
-          2026,
-          'tv',
-          '2026-04-12T08:30:00.000Z',
-          404,
-          4004,
-          'tt4000004',
-          4404,
-        ],
-        [
-          'Older Movie',
-          2025,
-          'movie',
-          '2026-04-11T07:00:00.000Z',
-          505,
-          5005,
-          'tt5000005',
-          '',
-        ],
-      ]
+        'Title,Year,Media Type,Last Watched At,TMDB ID,Trakt ID,IMDb ID,TVDB ID',
+        'Latest Show,2026,tv,2026-04-12T08:30:00.000Z,404,4004,tt4000004,4404',
+        'Older Movie,2025,movie,2026-04-11T07:00:00.000Z,505,5005,tt5000005,',
+        '',
+      ].join('\r\n')
     );
   });
 
@@ -415,7 +358,7 @@ describe('Google Sheets sync', () => {
         year: 2025,
       })
     );
-    const { driveFilesCreate } = mockGoogleApis({
+    const { driveFilesCreate, driveFilesUpdate } = mockGoogleApis({
       updateError: new Error('Google write failed'),
     });
 
@@ -428,6 +371,7 @@ describe('Google Sheets sync', () => {
       where: { user: { id: 1 } },
     });
     assert.strictEqual(driveFilesCreate.mock.calls.length, 0);
+    assert.strictEqual(driveFilesUpdate.mock.calls.length, 1);
     assert.strictEqual(
       savedSettings.googleSheetsWatchlistSpreadsheetId,
       'existing-watchlist-id'
@@ -437,5 +381,44 @@ describe('Google Sheets sync', () => {
       'Google write failed'
     );
     assert.ok(savedSettings.googleSheetsWatchlistLastSyncAttemptAt);
+  });
+
+  it('replaces a previously managed Google spreadsheet with a managed CSV file', async () => {
+    await seedLinkedGoogleUser({
+      watchlistSpreadsheetId: 'legacy-google-sheet-id',
+    });
+    await getRepository(TraktWatchlist).save(
+      new TraktWatchlist({
+        listedAt: new Date('2026-04-10T10:00:00.000Z'),
+        mediaType: MediaType.MOVIE,
+        rank: 1,
+        source: 'trakt',
+        title: 'Migrated Movie',
+        tmdbId: 101,
+        traktId: 1001,
+        userId: 1,
+        watchlistEntryId: 1001,
+        year: 2025,
+      })
+    );
+    const { driveFilesCreate, driveFilesUpdate } = mockGoogleApis({
+      existingFileMimeTypes: {
+        'legacy-google-sheet-id': 'application/vnd.google-apps.spreadsheet',
+      },
+    });
+
+    const status = await syncGoogleSheetsWatchlistForUser(1);
+
+    assert.strictEqual(driveFilesUpdate.mock.calls.length, 0);
+    assert.strictEqual(driveFilesCreate.mock.calls.length, 1);
+    assert.strictEqual(status.watchlist.spreadsheetId, 'watchlist-sheet-id');
+
+    const savedSettings = await getRepository(UserSettings).findOneOrFail({
+      where: { user: { id: 1 } },
+    });
+    assert.strictEqual(
+      savedSettings.googleSheetsWatchlistSpreadsheetId,
+      'watchlist-sheet-id'
+    );
   });
 });

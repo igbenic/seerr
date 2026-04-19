@@ -227,5 +227,5 @@ export const createGoogleApisForUser = async (
   };
 };
 
-export const getGoogleSheetsSpreadsheetUrl = (spreadsheetId: string) =>
-  `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+export const getGoogleDriveFileUrl = (fileId: string) =>
+  `https://drive.google.com/open?id=${fileId}`;

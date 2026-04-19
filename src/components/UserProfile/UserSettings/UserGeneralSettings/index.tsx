@@ -112,33 +112,33 @@ const messages = defineMessages(
     traktWatchlistStatusLastError: 'Last error',
     traktWatchlistSyncSuccess: 'Trakt watchlist sync completed.',
     traktWatchlistSyncFailure: 'Unable to sync Trakt watchlist.',
-    googleSheetsWatchlistSync: 'Mirror Want to Watch to Google Sheets',
+    googleSheetsWatchlistSync: 'Mirror Want to Watch to Google Drive CSV',
     googleSheetsWatchlistSyncTip:
-      'Create and maintain an app-managed Google spreadsheet from your Trakt watchlist.',
-    googleSheetsWatchlistSheet: 'Spreadsheet',
+      'Create and maintain an app-managed CSV file in Google Drive from your Trakt watchlist.',
+    googleSheetsWatchlistSheet: 'CSV File',
     googleSheetsWatchlistSyncNow: 'Sync Now',
     googleSheetsWatchlistStatusConnected:
-      'Linked Google Sheets and Trakt accounts required for sync.',
+      'Linked Google Drive and Trakt accounts required for sync.',
     googleSheetsWatchlistStatusLastSuccess: 'Last successful sync',
     googleSheetsWatchlistStatusLastAttempt: 'Last attempted sync',
     googleSheetsWatchlistStatusLastError: 'Last error',
     googleSheetsWatchlistSyncSuccess:
-      'Google Sheets want-to-watch sync completed.',
+      'Google Drive want-to-watch CSV sync completed.',
     googleSheetsWatchlistSyncFailure:
-      'Unable to sync the Google Sheets want-to-watch spreadsheet.',
-    googleSheetsWatchedSync: 'Mirror Watched to Google Sheets',
+      'Unable to sync the Google Drive want-to-watch CSV file.',
+    googleSheetsWatchedSync: 'Mirror Watched to Google Drive CSV',
     googleSheetsWatchedSyncTip:
-      'Create and maintain an app-managed Google spreadsheet of unique Trakt-watched titles.',
-    googleSheetsWatchedSheet: 'Spreadsheet',
+      'Create and maintain an app-managed CSV file in Google Drive of unique Trakt-watched titles.',
+    googleSheetsWatchedSheet: 'CSV File',
     googleSheetsWatchedSyncNow: 'Sync Now',
     googleSheetsWatchedStatusConnected:
-      'Linked Google Sheets and Trakt accounts required for sync.',
+      'Linked Google Drive and Trakt accounts required for sync.',
     googleSheetsWatchedStatusLastSuccess: 'Last successful sync',
     googleSheetsWatchedStatusLastAttempt: 'Last attempted sync',
     googleSheetsWatchedStatusLastError: 'Last error',
-    googleSheetsWatchedSyncSuccess: 'Google Sheets watched sync completed.',
+    googleSheetsWatchedSyncSuccess: 'Google Drive watched CSV sync completed.',
     googleSheetsWatchedSyncFailure:
-      'Unable to sync the Google Sheets watched spreadsheet.',
+      'Unable to sync the Google Drive watched CSV file.',
   }
 );
 

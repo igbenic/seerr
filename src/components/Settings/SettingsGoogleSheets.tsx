@@ -16,11 +16,11 @@ import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Settings.SettingsGoogleSheets', {
-  googleSheets: 'Google Sheets',
-  googleSheetsSettings: 'Google Sheets Settings',
+  googleSheets: 'Google Drive CSV',
+  googleSheetsSettings: 'Google Drive CSV Settings',
   googleSheetsSettingsDescription:
-    'Enable per-user Google Sheets connections so Seerr can mirror Trakt-backed watchlist and watched titles into app-managed spreadsheets.',
-  enabled: 'Enable Google Sheets',
+    'Enable per-user Google Drive connections so Seerr can mirror Trakt-backed watchlist and watched titles into app-managed CSV files.',
+  enabled: 'Enable Google Drive CSV Export',
   enabledTip:
     'Users will be able to link their own Google accounts from Linked Accounts once this is enabled.',
   clientId: 'Client ID',
@@ -30,9 +30,9 @@ const messages = defineMessages('components.Settings.SettingsGoogleSheets', {
     'Set an Application URL in General settings to keep this callback stable across reverse proxies and alternate hostnames.',
   callbackUrlFallback:
     'Uses the current request host until an Application URL is configured.',
-  toastSettingsSuccess: 'Google Sheets settings saved successfully!',
+  toastSettingsSuccess: 'Google Drive CSV settings saved successfully!',
   toastSettingsFailure:
-    'Something went wrong while saving Google Sheets settings.',
+    'Something went wrong while saving Google Drive CSV settings.',
   validationClientId: 'You must provide a Google OAuth client ID.',
   validationClientSecret: 'You must provide a Google OAuth client secret.',
 });

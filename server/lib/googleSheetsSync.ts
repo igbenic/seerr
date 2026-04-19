@@ -10,39 +10,29 @@ import type {
 } from '@server/interfaces/api/googleSheetsInterfaces';
 import {
   createGoogleApisForUser,
-  getGoogleSheetsSpreadsheetUrl,
+  getGoogleDriveFileUrl,
   type GoogleDriveClient,
-  type GoogleSheetsClient,
 } from '@server/lib/googleSheets';
 import logger from '@server/logger';
+import { Readable } from 'stream';
 
-const WATCHLIST_SPREADSHEET_NAME_SUFFIX = 'Want to Watch';
-const WATCHED_SPREADSHEET_NAME_SUFFIX = 'Watched';
-const WATCHLIST_SHEET_TITLE = 'Want to Watch';
-const WATCHED_SHEET_TITLE = 'Watched';
+const WATCHLIST_CSV_NAME_SUFFIX = 'Want to Watch.csv';
+const WATCHED_CSV_NAME_SUFFIX = 'Watched.csv';
+const GOOGLE_DRIVE_CSV_MIME_TYPE = 'text/csv';
 
 type GoogleSheetsTarget = 'watchlist' | 'watched';
 
-type ManagedSpreadsheet = {
-  sheetTitle: string;
-  spreadsheetId: string;
+type ManagedDriveFile = {
+  fileId: string;
 };
 
 const formatDateTime = (value?: Date | null) =>
   value ? value.toISOString() : '';
 
-const quoteSheetTitle = (sheetTitle: string) =>
-  `'${sheetTitle.replace(/'/g, "''")}'`;
-
-const getSpreadsheetName = (user: User, target: GoogleSheetsTarget) =>
+const getDriveFileName = (user: User, target: GoogleSheetsTarget) =>
   `Seerr - ${user.displayName} - ${
-    target === 'watchlist'
-      ? WATCHLIST_SPREADSHEET_NAME_SUFFIX
-      : WATCHED_SPREADSHEET_NAME_SUFFIX
+    target === 'watchlist' ? WATCHLIST_CSV_NAME_SUFFIX : WATCHED_CSV_NAME_SUFFIX
   }`;
-
-const getExpectedSheetTitle = (target: GoogleSheetsTarget) =>
-  target === 'watchlist' ? WATCHLIST_SHEET_TITLE : WATCHED_SHEET_TITLE;
 
 const ensureUserSettings = async (userId: number): Promise<UserSettings> => {
   const settingsRepository = getRepository(UserSettings);
@@ -83,9 +73,7 @@ const getTargetStatus = ({
   lastError: lastError ?? null,
   lastSuccessfulSyncAt: lastSuccessfulSyncAt ?? null,
   spreadsheetId: spreadsheetId ?? null,
-  spreadsheetUrl: spreadsheetId
-    ? getGoogleSheetsSpreadsheetUrl(spreadsheetId)
-    : null,
+  spreadsheetUrl: spreadsheetId ? getGoogleDriveFileUrl(spreadsheetId) : null,
 });
 
 const buildStatusResponse = async (
@@ -120,165 +108,169 @@ const buildStatusResponse = async (
 
 export const getGoogleSheetsSyncStatus = buildStatusResponse;
 
-const createManagedSpreadsheet = async ({
+const getGoogleApiStatusCode = (error: unknown): number | null => {
+  if (typeof error !== 'object' || !error) {
+    return null;
+  }
+
+  if ('status' in error && typeof error.status === 'number') {
+    return error.status;
+  }
+
+  if (
+    'response' in error &&
+    typeof error.response === 'object' &&
+    error.response &&
+    'status' in error.response &&
+    typeof error.response.status === 'number'
+  ) {
+    return error.response.status;
+  }
+
+  return null;
+};
+
+const createCsvBody = (csvContent: string) => Readable.from([csvContent]);
+
+const createManagedCsvFile = async ({
+  csvContent,
   drive,
   name,
 }: {
+  csvContent: string;
   drive: GoogleDriveClient;
   name: string;
 }): Promise<string> => {
   const response = await drive.files.create({
     fields: 'id',
+    media: {
+      body: createCsvBody(csvContent),
+      mimeType: GOOGLE_DRIVE_CSV_MIME_TYPE,
+    },
     requestBody: {
-      mimeType: 'application/vnd.google-apps.spreadsheet',
+      mimeType: GOOGLE_DRIVE_CSV_MIME_TYPE,
       name,
     },
   });
 
   if (!response.data.id) {
-    throw new Error('Google Sheets spreadsheet creation did not return an id.');
+    throw new Error('Google Drive CSV file creation did not return an id.');
   }
 
   return response.data.id;
 };
 
-const ensureSpreadsheet = async ({
+const getManagedDriveFile = async ({
+  drive,
+  fileId,
+}: {
+  drive: GoogleDriveClient;
+  fileId: string;
+}): Promise<{ fileId: string; mimeType: string | null } | null> => {
+  try {
+    const response = await drive.files.get({
+      fields: 'id,mimeType',
+      fileId,
+    });
+
+    if (!response.data.id) {
+      return null;
+    }
+
+    return {
+      fileId: response.data.id,
+      mimeType: response.data.mimeType ?? null,
+    };
+  } catch (error) {
+    if (getGoogleApiStatusCode(error) === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+const updateManagedCsvFile = async ({
+  csvContent,
+  drive,
+  fileId,
+  name,
+}: {
+  csvContent: string;
+  drive: GoogleDriveClient;
+  fileId: string;
+  name: string;
+}) => {
+  await drive.files.update({
+    fileId,
+    media: {
+      body: createCsvBody(csvContent),
+      mimeType: GOOGLE_DRIVE_CSV_MIME_TYPE,
+    },
+    requestBody: {
+      mimeType: GOOGLE_DRIVE_CSV_MIME_TYPE,
+      name,
+    },
+  });
+};
+
+const ensureManagedCsvFile = async ({
+  csvContent,
   drive,
   existingSpreadsheetId,
   name,
-  target,
 }: {
+  csvContent: string;
   drive: GoogleDriveClient;
   existingSpreadsheetId?: string | null;
   name: string;
-  target: GoogleSheetsTarget;
-}): Promise<ManagedSpreadsheet> => {
-  const sheetTitle = getExpectedSheetTitle(target);
+}): Promise<ManagedDriveFile> => {
+  const existingFile = existingSpreadsheetId
+    ? await getManagedDriveFile({
+        drive,
+        fileId: existingSpreadsheetId,
+      })
+    : null;
 
-  if (existingSpreadsheetId) {
+  if (
+    existingFile?.fileId &&
+    existingFile.mimeType === GOOGLE_DRIVE_CSV_MIME_TYPE
+  ) {
+    await updateManagedCsvFile({
+      csvContent,
+      drive,
+      fileId: existingFile.fileId,
+      name,
+    });
+
     return {
-      sheetTitle,
-      spreadsheetId: existingSpreadsheetId,
+      fileId: existingFile.fileId,
     };
   }
 
-  const spreadsheetId = await createManagedSpreadsheet({
+  const fileId = await createManagedCsvFile({
+    csvContent,
     drive,
     name,
   });
 
   return {
-    sheetTitle,
-    spreadsheetId,
+    fileId,
   };
 };
 
-const ensureSheetTitle = async ({
-  sheetTitle,
-  sheets,
-  spreadsheetId,
-}: {
-  sheetTitle: string;
-  sheets: GoogleSheetsClient;
-  spreadsheetId: string;
-}) => {
-  const response = await sheets.spreadsheets.get({
-    fields: 'sheets.properties(sheetId,title)',
-    spreadsheetId,
-  });
-  const matchingSheet = response.data.sheets?.find(
-    (sheet) => sheet.properties?.title === sheetTitle
-  );
+const serializeCsvCell = (value: number | string) => {
+  const normalizedValue = String(value);
 
-  if (matchingSheet) {
-    return {
-      sheetId: matchingSheet.properties?.sheetId ?? 0,
-      sheetTitle,
-    };
+  if (!/[",\r\n]/.test(normalizedValue)) {
+    return normalizedValue;
   }
 
-  const firstSheet = response.data.sheets?.[0];
-
-  if (firstSheet?.properties?.sheetId == null) {
-    throw new Error(
-      'Google Sheets spreadsheet does not contain a writable tab.'
-    );
-  }
-
-  if (firstSheet.properties.title !== sheetTitle) {
-    await sheets.spreadsheets.batchUpdate({
-      requestBody: {
-        requests: [
-          {
-            updateSheetProperties: {
-              fields: 'title',
-              properties: {
-                sheetId: firstSheet.properties.sheetId,
-                title: sheetTitle,
-              },
-            },
-          },
-        ],
-      },
-      spreadsheetId,
-    });
-  }
-
-  return {
-    sheetId: firstSheet.properties.sheetId,
-    sheetTitle,
-  };
+  return `"${normalizedValue.replace(/"/g, '""')}"`;
 };
 
-const writeSpreadsheetRows = async ({
-  rows,
-  spreadsheetId,
-  target,
-  sheets,
-}: {
-  rows: (number | string)[][];
-  spreadsheetId: string;
-  target: GoogleSheetsTarget;
-  sheets: GoogleSheetsClient;
-}) => {
-  const { sheetId, sheetTitle } = await ensureSheetTitle({
-    sheetTitle: getExpectedSheetTitle(target),
-    sheets,
-    spreadsheetId,
-  });
-  const rangePrefix = quoteSheetTitle(sheetTitle);
-
-  await sheets.spreadsheets.values.clear({
-    range: `${rangePrefix}!A:Z`,
-    spreadsheetId,
-  });
-  await sheets.spreadsheets.values.update({
-    range: `${rangePrefix}!A1`,
-    requestBody: {
-      values: rows,
-    },
-    spreadsheetId,
-    valueInputOption: 'RAW',
-  });
-  await sheets.spreadsheets.batchUpdate({
-    requestBody: {
-      requests: [
-        {
-          updateSheetProperties: {
-            fields: 'gridProperties.frozenRowCount',
-            properties: {
-              gridProperties: {
-                frozenRowCount: 1,
-              },
-              sheetId,
-            },
-          },
-        },
-      ],
-    },
-    spreadsheetId,
-  });
-};
+const rowsToCsv = (rows: (number | string)[][]) =>
+  rows.map((row) => row.map(serializeCsvCell).join(',')).join('\r\n') + '\r\n';
 
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'Unknown error';
@@ -365,7 +357,7 @@ const syncGoogleSheetsTargetForUser = async ({
   });
 
   if (!linkedUser?.googleSheetsEmail) {
-    throw new Error('Google Sheets is not linked for this user.');
+    throw new Error('Google Drive is not linked for this user.');
   }
 
   if (
@@ -386,45 +378,35 @@ const syncGoogleSheetsTargetForUser = async ({
     const clients = await createGoogleApisForUser(userId);
 
     if (!clients) {
-      throw new Error('Google Sheets is not linked for this user.');
+      throw new Error('Google Drive is not linked for this user.');
     }
-
-    const managedSpreadsheet = await ensureSpreadsheet({
+    const rows =
+      target === 'watchlist'
+        ? await getWatchlistRows(userId)
+        : await getWatchedRows(userId);
+    const managedFile = await ensureManagedCsvFile({
+      csvContent: rowsToCsv(rows),
       drive: clients.drive,
       existingSpreadsheetId:
         target === 'watchlist'
           ? settings.googleSheetsWatchlistSpreadsheetId
           : settings.googleSheetsWatchedSpreadsheetId,
-      name: getSpreadsheetName(linkedUser, target),
-      target,
-    });
-    const rows =
-      target === 'watchlist'
-        ? await getWatchlistRows(userId)
-        : await getWatchedRows(userId);
-
-    await writeSpreadsheetRows({
-      rows,
-      sheets: clients.sheets,
-      spreadsheetId: managedSpreadsheet.spreadsheetId,
-      target,
+      name: getDriveFileName(linkedUser, target),
     });
 
     if (target === 'watchlist') {
       settings.googleSheetsWatchlistLastError = null;
       settings.googleSheetsWatchlistLastSyncAt = new Date();
-      settings.googleSheetsWatchlistSpreadsheetId =
-        managedSpreadsheet.spreadsheetId;
+      settings.googleSheetsWatchlistSpreadsheetId = managedFile.fileId;
     } else {
       settings.googleSheetsWatchedLastError = null;
       settings.googleSheetsWatchedLastSyncAt = new Date();
-      settings.googleSheetsWatchedSpreadsheetId =
-        managedSpreadsheet.spreadsheetId;
+      settings.googleSheetsWatchedSpreadsheetId = managedFile.fileId;
     }
     await getRepository(UserSettings).save(settings);
 
-    logger.info('Google Sheets sync completed', {
-      label: 'Google Sheets',
+    logger.info('Google Drive CSV sync completed', {
+      label: 'Google Drive CSV',
       target,
       userId,
     });
@@ -438,9 +420,9 @@ const syncGoogleSheetsTargetForUser = async ({
     }
     await getRepository(UserSettings).save(settings);
 
-    logger.error('Google Sheets sync failed', {
+    logger.error('Google Drive CSV sync failed', {
       errorMessage: getErrorMessage(error),
-      label: 'Google Sheets',
+      label: 'Google Drive CSV',
       target,
       userId,
     });

@@ -12,7 +12,7 @@ import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
-import { TableCellsIcon } from '@heroicons/react/24/outline';
+import { FolderIcon } from '@heroicons/react/24/outline';
 import { TrashIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
 import type { GoogleSheetsAuthStatusResponse } from '@server/interfaces/api/googleSheetsInterfaces';
@@ -44,13 +44,13 @@ const messages = defineMessages(
     traktInvalidState:
       'The Trakt sign-in callback could not be validated. Please try again.',
     traktError: 'Unable to complete the Trakt connection.',
-    googleSheetsConnected: 'Google Sheets account connected successfully.',
-    googleSheetsDisconnected: 'Google Sheets account disconnected.',
+    googleSheetsConnected: 'Google Drive account connected successfully.',
+    googleSheetsDisconnected: 'Google Drive account disconnected.',
     googleSheetsAlreadyLinked:
-      'That Google Sheets account is already linked to another user.',
+      'That Google Drive account is already linked to another user.',
     googleSheetsInvalidState:
-      'The Google Sheets sign-in callback could not be validated. Please try again.',
-    googleSheetsError: 'Unable to complete the Google Sheets connection.',
+      'The Google Drive sign-in callback could not be validated. Please try again.',
+    googleSheetsError: 'Unable to complete the Google Drive connection.',
     imdbImport: 'Import IMDb CSV',
   }
 );
@@ -62,7 +62,7 @@ enum LinkedAccountType {
   Jellyfin = 'Jellyfin',
   Emby = 'Emby',
   Trakt = 'Trakt',
-  GoogleSheets = 'Google Sheets',
+  GoogleSheets = 'Google Drive',
 }
 
 type LinkedAccount = {
@@ -262,7 +262,7 @@ const UserLinkedAccountsSettings = () => {
         accounts.some((a) => a.type === LinkedAccountType.Trakt),
     },
     {
-      name: 'Google Sheets',
+      name: 'Google Drive',
       action: () => {
         window.location.assign(
           `/api/v1/auth/google-sheets/connect?redirect=${encodeURIComponent(
@@ -388,7 +388,7 @@ const UserLinkedAccountsSettings = () => {
                   <TraktLogo />
                 ) : acct.type === LinkedAccountType.GoogleSheets ? (
                   <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800">
-                    <TableCellsIcon className="w-7 text-white" />
+                    <FolderIcon className="w-7 text-white" />
                   </div>
                 ) : (
                   <JellyfinLogo />
