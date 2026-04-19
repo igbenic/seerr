@@ -206,7 +206,7 @@ app
     // Set up sessions
     const sessionRespository = getRepository(Session);
     server.use(
-      '/api',
+      scopedRoute('/api'),
       session({
         secret: settings.clientId,
         resave: false,

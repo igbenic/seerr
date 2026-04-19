@@ -5,8 +5,8 @@
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const OFFLINE_VERSION = 5;
 const CACHE_NAME = 'offline';
-// Customize this with a different URL if needed.
-const OFFLINE_URL = '/offline.html';
+const withScope = (path) => new URL(path, self.registration.scope).pathname;
+const OFFLINE_URL = withScope('offline.html');
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -75,8 +75,10 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: payload.message,
-    badge: 'badge-128x128.png',
-    icon: payload.image ? payload.image : 'android-chrome-192x192.png',
+    badge: withScope('badge-128x128.png'),
+    icon: payload.image
+      ? payload.image
+      : withScope('android-chrome-192x192.png'),
     vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
@@ -137,11 +139,11 @@ self.addEventListener(
     event.notification.close();
 
     if (event.action === 'approve') {
-      fetch(`/api/v1/request/${notificationData.requestId}/approve`, {
+      fetch(withScope(`api/v1/request/${notificationData.requestId}/approve`), {
         method: 'POST',
       });
     } else if (event.action === 'decline') {
-      fetch(`/api/v1/request/${notificationData.requestId}/decline`, {
+      fetch(withScope(`api/v1/request/${notificationData.requestId}/decline`), {
         method: 'POST',
       });
     }

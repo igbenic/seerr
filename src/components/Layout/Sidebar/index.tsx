@@ -3,6 +3,7 @@ import UserWarnings from '@app/components/Layout/UserWarnings';
 import VersionStatus from '@app/components/Layout/VersionStatus';
 import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
+import { withBasePath } from '@app/utils/basePath';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import {
@@ -193,7 +194,11 @@ const Sidebar = ({
                     <div className="flex flex-shrink-0 items-center px-2">
                       <span className="w-full px-4 text-xl text-gray-50">
                         <Link href="/" className="relative block h-24 w-64">
-                          <Image src="/logo_full.svg" alt="Logo" fill />
+                          <Image
+                            src={withBasePath('/logo_full.svg')}
+                            alt="Logo"
+                            fill
+                          />
                         </Link>
                       </span>
                     </div>
@@ -260,7 +265,11 @@ const Sidebar = ({
               <div className="flex flex-shrink-0 items-center">
                 <span className="w-full px-4 py-2 text-2xl text-gray-50">
                   <Link href="/" className="relative block h-24">
-                    <Image src="/logo_full.svg" alt="Logo" fill />
+                    <Image
+                      src={withBasePath('/logo_full.svg')}
+                      alt="Logo"
+                      fill
+                    />
                   </Link>
                 </span>
               </div>
