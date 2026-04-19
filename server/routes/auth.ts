@@ -35,6 +35,7 @@ import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
 import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
+import { withBasePath } from '@server/utils/basePath';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
@@ -139,7 +140,7 @@ authRoutes.get('/me', isAuthenticated(), async (req, res) => {
     logger.warn(`User ${user.username} has no valid email address`);
   }
 
-  return res.status(200).json(user);
+  return res.status(200).json(user.filter());
 });
 
 authRoutes.get('/trakt/status', isAuthenticated(), async (req, res, next) => {
@@ -733,7 +734,9 @@ authRoutes.post('/plex', async (req, res, next) => {
 });
 
 function getUserAvatarUrl(user: User): string {
-  return `/avatarproxy/${user.jellyfinUserId}?v=${user.avatarVersion}`;
+  return withBasePath(
+    `/avatarproxy/${user.jellyfinUserId}?v=${user.avatarVersion}`
+  );
 }
 
 authRoutes.post('/jellyfin', async (req, res, next) => {

@@ -9,6 +9,7 @@ import { Permission, hasPermission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn } from '@server/utils/DbColumnHelper';
+import { withBasePath } from '@server/utils/basePath';
 import { AfterDate } from '@server/utils/dateHelpers';
 import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
@@ -229,6 +230,13 @@ export class User {
         .filter((k) => showFiltered || !User.filteredFields.includes(k))
         .map((k) => ({ [k]: this[k] }))
     );
+
+    if (
+      typeof filtered.avatar === 'string' &&
+      filtered.avatar.startsWith('/')
+    ) {
+      filtered.avatar = withBasePath(filtered.avatar);
+    }
 
     return filtered;
   }

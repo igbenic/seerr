@@ -21,10 +21,11 @@ import type {
 } from '@server/interfaces/api/userInterfaces';
 import { Permission, hasPermission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
-import { listTraktHistory } from '@server/lib/traktHistory';
 import { getTraktWatchData } from '@server/lib/trakt';
+import { listTraktHistory } from '@server/lib/traktHistory';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
+import { withBasePath } from '@server/utils/basePath';
 import { getHostname } from '@server/utils/getHostname';
 import { normalizeJellyfinGuid } from '@server/utils/jellyfin';
 import { isOwnProfileOrAdmin } from '@server/utils/profileMiddleware';
@@ -760,7 +761,7 @@ router.post(
             ).toString('base64'),
             email: jellyfinUser?.Name,
             permissions: settings.main.defaultPermissions,
-            avatar: `/avatarproxy/${jellyfinUser?.Id}`,
+            avatar: withBasePath(`/avatarproxy/${jellyfinUser?.Id}`),
             userType:
               settings.main.mediaServerType === MediaServerType.JELLYFIN
                 ? UserType.JELLYFIN
