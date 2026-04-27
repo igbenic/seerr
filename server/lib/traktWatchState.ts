@@ -27,6 +27,8 @@ type EligibleEpisode = {
   seasonNumber: number;
 };
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const isAired = (airDate?: string | null) => {
   if (!airDate) {
     return false;
@@ -433,14 +435,35 @@ export const getShowSeasonData = async (
     : await getMetadataProvider('tv');
   const show = await metadataProvider.getTvShow({ tvId, language });
   const seasons = show.seasons.filter((season) => season.episode_count > 0);
+  const seasonFetchConcurrency = 4;
+  const fetchSeasonWithRetry = async (season: (typeof seasons)[number]) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await metadataProvider.getTvSeason({
+          language,
+          seasonNumber: season.season_number,
+          tvId,
+        });
+      } catch (error) {
+        if (attempt === 1) {
+          throw error;
+        }
 
-  return Promise.all(
-    seasons.map((season) =>
-      metadataProvider.getTvSeason({
-        language,
-        seasonNumber: season.season_number,
-        tvId,
-      })
-    )
-  ).then((items) => items.map((season) => mapSeasonWithEpisodes(season)));
+        await wait(500);
+      }
+    }
+
+    throw new Error('Unable to fetch season metadata.');
+  };
+  const seasonResults: Awaited<
+    ReturnType<typeof metadataProvider.getTvSeason>
+  >[] = [];
+
+  for (let index = 0; index < seasons.length; index += seasonFetchConcurrency) {
+    const chunk = seasons.slice(index, index + seasonFetchConcurrency);
+
+    seasonResults.push(...(await Promise.all(chunk.map(fetchSeasonWithRetry))));
+  }
+
+  return seasonResults.map((season) => mapSeasonWithEpisodes(season));
 };
