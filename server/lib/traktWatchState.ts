@@ -16,6 +16,7 @@ import {
   mapSeasonWithEpisodes,
   type SeasonWithEpisodes,
 } from '@server/models/Tv';
+import { In } from 'typeorm';
 
 type EligibleEpisode = {
   airDate: string | null;
@@ -55,6 +56,38 @@ export const getLatestMovieWatchStatus = async (
     watched: !!latest,
     watchedAt: latest?.lastWatchedAt ?? null,
   };
+};
+
+export const getLatestMovieWatchStatusMap = async (
+  userId: number,
+  tmdbIds: number[]
+): Promise<Map<number, WatchedStatus>> => {
+  const uniqueTmdbIds = [...new Set(tmdbIds)];
+
+  if (uniqueTmdbIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await getRepository(TraktWatchedMedia).find({
+    order: { lastWatchedAt: 'DESC', id: 'DESC' },
+    where: {
+      mediaType: MediaType.MOVIE,
+      tmdbId: In(uniqueTmdbIds),
+      userId,
+    },
+  });
+  const statuses = new Map<number, WatchedStatus>();
+
+  for (const row of rows) {
+    if (!statuses.has(row.tmdbId)) {
+      statuses.set(row.tmdbId, {
+        watched: true,
+        watchedAt: row.lastWatchedAt,
+      });
+    }
+  }
+
+  return statuses;
 };
 
 export const getEpisodeWatchStatusMap = async (

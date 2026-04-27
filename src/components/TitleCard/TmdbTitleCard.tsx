@@ -24,6 +24,9 @@ export interface TmdbTitleCardProps {
     summary?: string;
     title: string;
     userScore?: number;
+    userWatchStatus?:
+      | MovieDetails['userWatchStatus']
+      | TvDetails['userWatchStatus'];
     year?: string;
   };
 }
@@ -35,6 +38,51 @@ const messages = defineMessages('components.TitleCard.TmdbTitleCard', {
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
   return (movie as MovieDetails).title !== undefined;
+};
+
+const getWatchStateBadge = (
+  mediaType: 'movie' | 'tv',
+  userWatchStatus?:
+    | MovieDetails['userWatchStatus']
+    | TvDetails['userWatchStatus']
+) => {
+  if (!userWatchStatus) {
+    return undefined;
+  }
+
+  if (mediaType === 'movie') {
+    return userWatchStatus.watched
+      ? {
+          label: messages.watched,
+          type: 'success' as const,
+        }
+      : undefined;
+  }
+
+  if (userWatchStatus.watched) {
+    return {
+      label: messages.watched,
+      type: 'success' as const,
+    };
+  }
+
+  if (
+    'watchedEpisodeCount' in userWatchStatus &&
+    'eligibleEpisodeCount' in userWatchStatus &&
+    userWatchStatus.watchedEpisodeCount > 0 &&
+    userWatchStatus.eligibleEpisodeCount > 0
+  ) {
+    return {
+      label: messages.watchedProgress,
+      type: 'primary' as const,
+      values: {
+        eligibleEpisodeCount: userWatchStatus.eligibleEpisodeCount,
+        watchedEpisodeCount: userWatchStatus.watchedEpisodeCount,
+      },
+    };
+  }
+
+  return undefined;
 };
 
 const TmdbTitleCard = ({
@@ -79,32 +127,17 @@ const TmdbTitleCard = ({
     ) : null;
   }
 
-  const watchState = !title
-    ? undefined
-    : isMovie(title)
-      ? title.userWatchStatus?.watched
-        ? {
-            label: intl.formatMessage(messages.watched),
-            type: 'success' as const,
-          }
-        : undefined
-      : title.userWatchStatus?.watched
-        ? {
-            label: intl.formatMessage(messages.watched),
-            type: 'success' as const,
-          }
-        : title.userWatchStatus &&
-            title.userWatchStatus.watchedEpisodeCount > 0 &&
-            title.userWatchStatus.eligibleEpisodeCount > 0
-          ? {
-              label: intl.formatMessage(messages.watchedProgress, {
-                eligibleEpisodeCount:
-                  title.userWatchStatus.eligibleEpisodeCount,
-                watchedEpisodeCount: title.userWatchStatus.watchedEpisodeCount,
-              }),
-              type: 'primary' as const,
-            }
-          : undefined;
+  const titleMediaType = title ? (isMovie(title) ? 'movie' : 'tv') : type;
+  const watchState = getWatchStateBadge(
+    titleMediaType,
+    title?.userWatchStatus ?? titleData?.userWatchStatus
+  );
+  const watchStateLabel = watchState
+    ? intl.formatMessage(
+        watchState.label,
+        'values' in watchState ? watchState.values : undefined
+      )
+    : undefined;
 
   return (
     <div ref={ref}>
@@ -125,7 +158,7 @@ const TmdbTitleCard = ({
           canExpand={canExpand}
           mutateParent={mutateParent}
           watchStateBadgeType={watchState?.type}
-          watchStateLabel={watchState?.label}
+          watchStateLabel={watchStateLabel}
         />
       ) : title ? (
         <TitleCard
@@ -144,7 +177,7 @@ const TmdbTitleCard = ({
           canExpand={canExpand}
           mutateParent={mutateParent}
           watchStateBadgeType={watchState?.type}
-          watchStateLabel={watchState?.label}
+          watchStateLabel={watchStateLabel}
         />
       ) : (
         <TitleCard
@@ -161,6 +194,8 @@ const TmdbTitleCard = ({
           canExpand={canExpand}
           inProgress={titleData?.inProgress}
           mutateParent={mutateParent}
+          watchStateBadgeType={watchState?.type}
+          watchStateLabel={watchStateLabel}
         />
       )}
     </div>

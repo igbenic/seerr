@@ -9,6 +9,10 @@ import type {
 } from '@server/api/themoviedb/interfaces';
 import { MediaType as MainMediaType } from '@server/constants/media';
 import type Media from '@server/entity/Media';
+import type {
+  ShowWatchedStatus,
+  WatchedStatus,
+} from '@server/interfaces/api/traktWatchInterfaces';
 
 export type MediaType = 'tv' | 'movie' | 'person' | 'collection';
 
@@ -34,6 +38,7 @@ export interface MovieResult extends SearchResult {
   adult: boolean;
   video: boolean;
   mediaInfo?: Media;
+  userWatchStatus?: WatchedStatus;
 }
 
 export interface TvResult extends SearchResult {
@@ -42,6 +47,7 @@ export interface TvResult extends SearchResult {
   originalName: string;
   originCountry: string[];
   firstAirDate: string;
+  userWatchStatus?: ShowWatchedStatus;
 }
 
 export interface CollectionResult {

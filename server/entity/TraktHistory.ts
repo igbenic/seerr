@@ -1,4 +1,4 @@
-import { MediaType } from '@server/constants/media';
+import type { MediaType } from '@server/constants/media';
 import { User } from '@server/entity/User';
 import { DbAwareColumn } from '@server/utils/DbColumnHelper';
 import {
@@ -34,7 +34,7 @@ export class TraktHistory {
   public historyId: number;
 
   @Column({ type: 'varchar' })
-  public source: 'trakt' = 'trakt';
+  public source = 'trakt' as const;
 
   @Column({ type: 'varchar' })
   public mediaType: MediaType;

@@ -98,6 +98,7 @@ const ListView = ({
                       summary: title.overview,
                       title: title.title,
                       userScore: title.voteAverage,
+                      userWatchStatus: title.userWatchStatus,
                       year: title.releaseDate,
                     }}
                   />
@@ -122,6 +123,7 @@ const ListView = ({
                       summary: title.overview,
                       title: title.name,
                       userScore: title.voteAverage,
+                      userWatchStatus: title.userWatchStatus,
                       year: title.firstAirDate,
                     }}
                   />

@@ -16,6 +16,7 @@ import type {
 } from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
 import { getTraktRecommendations } from '@server/lib/trakt';
+import { getLatestMovieWatchStatusMap } from '@server/lib/traktWatchState';
 import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import { getTraktWatchlist } from '@server/lib/traktWatchlist';
 import logger from '@server/logger';
@@ -25,6 +26,7 @@ import {
   mapMovieResult,
   mapPersonResult,
   mapTvResult,
+  type MovieResult,
 } from '@server/models/Search';
 import { mapNetwork } from '@server/models/Tv';
 import { isCollection, isMovie, isPerson } from '@server/utils/typeHelpers';
@@ -56,6 +58,33 @@ export const createTmdbWithRegionLanguage = (user?: User): TheMovieDb => {
 };
 
 const discoverRoutes = Router();
+
+const shouldIncludeTraktMovieWatchState = (user?: User) =>
+  !!user?.traktUsername && !!user.settings?.traktHistorySyncEnabled;
+
+const addMovieWatchState = async (
+  user: User | undefined,
+  results: MovieResult[]
+): Promise<MovieResult[]> => {
+  if (!user || !shouldIncludeTraktMovieWatchState(user)) {
+    return results;
+  }
+
+  await ensureFreshTraktWatchState(user.id);
+
+  const watchStatusMap = await getLatestMovieWatchStatusMap(
+    user.id,
+    results.map((result) => result.id)
+  );
+
+  return results.map((result) => ({
+    ...result,
+    userWatchStatus: watchStatusMap.get(result.id) ?? {
+      watched: false,
+      watchedAt: null,
+    },
+  }));
+};
 
 const QueryFilterOptions = z.object({
   page: z.coerce.string().optional(),
@@ -151,20 +180,21 @@ discoverRoutes.get('/movies', async (req, res, next) => {
       );
     }
 
+    const results = data.results.map((result) =>
+      mapMovieResult(
+        result,
+        media.find(
+          (req) => req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+        )
+      )
+    );
+
     return res.status(200).json({
       page: data.page,
       totalPages: data.total_pages,
       totalResults: data.total_results,
       keywords: keywordData,
-      results: data.results.map((result) =>
-        mapMovieResult(
-          result,
-          media.find(
-            (req) =>
-              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-          )
-        )
-      ),
+      results: await addMovieWatchState(req.user, results),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving popular movies', {
@@ -208,20 +238,22 @@ discoverRoutes.get<{ language: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapMovieResult(
+          result,
+          media.find(
+            (req) =>
+              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
         language,
-        results: data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (req) =>
-                req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-            )
-          )
-        ),
+        results: await addMovieWatchState(req.user, results),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by language', {
@@ -269,20 +301,22 @@ discoverRoutes.get<{ genreId: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapMovieResult(
+          result,
+          media.find(
+            (req) =>
+              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
         genre,
-        results: data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (req) =>
-                req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-            )
-          )
-        ),
+        results: await addMovieWatchState(req.user, results),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by genre', {
@@ -320,20 +354,22 @@ discoverRoutes.get<{ studioId: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapMovieResult(
+          result,
+          media.find(
+            (med) =>
+              med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
         studio: mapProductionCompany(studio),
-        results: data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
-            )
-          )
-        ),
+        results: await addMovieWatchState(req.user, results),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by studio', {
@@ -373,19 +409,20 @@ discoverRoutes.get('/movies/upcoming', async (req, res, next) => {
       }))
     );
 
+    const results = data.results.map((result) =>
+      mapMovieResult(
+        result,
+        media.find(
+          (med) => med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+        )
+      )
+    );
+
     return res.status(200).json({
       page: data.page,
       totalPages: data.total_pages,
       totalResults: data.total_results,
-      results: data.results.map((result) =>
-        mapMovieResult(
-          result,
-          media.find(
-            (med) =>
-              med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
-          )
-        )
-      ),
+      results: await addMovieWatchState(req.user, results),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving upcoming movies', {
@@ -724,19 +761,21 @@ discoverRoutes.get('/trending', async (req, res, next) => {
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapMovieResult(
+          result,
+          media.find(
+            (med) =>
+              med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
-        results: data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
-            )
-          )
-        ),
+        results: await addMovieWatchState(req.user, results),
       });
     }
 
@@ -775,24 +814,39 @@ discoverRoutes.get('/trending', async (req, res, next) => {
       }))
     );
 
+    const results = data.results.map(
+      (result: TmdbSearchMultiResponse['results'][number]) => {
+        const selectedMedia = media.find((med) => med.tmdbId === result.id);
+
+        if (isMovie(result)) {
+          return mapMovieResult(result, selectedMedia);
+        } else if (isPerson(result)) {
+          return mapPersonResult(result);
+        } else if (isCollection(result)) {
+          return mapCollectionResult(result);
+        } else {
+          return mapTvResult(result, selectedMedia);
+        }
+      }
+    );
+    const movieWatchStateResults = await addMovieWatchState(
+      req.user,
+      results.filter(
+        (result): result is MovieResult => result.mediaType === 'movie'
+      )
+    );
+    const movieWatchStateMap = new Map(
+      movieWatchStateResults.map((result) => [result.id, result])
+    );
+
     return res.status(200).json({
       page: data.page,
       totalPages: data.total_pages,
       totalResults: data.total_results,
-      results: data.results.map(
-        (result: TmdbSearchMultiResponse['results'][number]) => {
-          const selectedMedia = media.find((med) => med.tmdbId === result.id);
-
-          if (isMovie(result)) {
-            return mapMovieResult(result, selectedMedia);
-          } else if (isPerson(result)) {
-            return mapPersonResult(result);
-          } else if (isCollection(result)) {
-            return mapCollectionResult(result);
-          } else {
-            return mapTvResult(result, selectedMedia);
-          }
-        }
+      results: results.map((result) =>
+        result.mediaType === 'movie'
+          ? (movieWatchStateMap.get(result.id) ?? result)
+          : result
       ),
     });
   } catch (e) {
@@ -827,19 +881,21 @@ discoverRoutes.get<{ keywordId: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapMovieResult(
+          result,
+          media.find(
+            (med) =>
+              med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
-        results: data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
-            )
-          )
-        ),
+        results: await addMovieWatchState(req.user, results),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by keyword', {
