@@ -5,12 +5,16 @@ import TheMovieDb from '@server/api/themoviedb';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
+import type { User } from '@server/entity/User';
 import { Watchlist } from '@server/entity/Watchlist';
 import {
   markMovieUnwatched,
   markMovieWatched,
 } from '@server/lib/traktWatchActions';
-import { getLatestMovieWatchStatus } from '@server/lib/traktWatchState';
+import {
+  getLatestMovieWatchStatus,
+  getLatestMovieWatchStatusMap,
+} from '@server/lib/traktWatchState';
 import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -19,6 +23,33 @@ import { mapMovieResult } from '@server/models/Search';
 import { Router } from 'express';
 
 const movieRoutes = Router();
+
+const shouldIncludeTraktWatchState = (user?: User) =>
+  !!user?.traktUsername && !!user.settings?.traktHistorySyncEnabled;
+
+const addMovieWatchState = async (
+  user: User | undefined,
+  results: ReturnType<typeof mapMovieResult>[]
+) => {
+  if (!user || !shouldIncludeTraktWatchState(user)) {
+    return results;
+  }
+
+  await ensureFreshTraktWatchState(user.id);
+
+  const watchStatusMap = await getLatestMovieWatchStatusMap(
+    user.id,
+    results.map((result) => result.id)
+  );
+
+  return results.map((result) => ({
+    ...result,
+    userWatchStatus: watchStatusMap.get(result.id) ?? {
+      watched: false,
+      watchedAt: null,
+    },
+  }));
+};
 
 movieRoutes.get('/:id', async (req, res, next) => {
   const tmdb = new TheMovieDb();
@@ -45,8 +76,7 @@ movieRoutes.get('/:id', async (req, res, next) => {
       | Awaited<ReturnType<typeof getLatestMovieWatchStatus>>
       | undefined;
 
-    const traktWatchStateEnabled =
-      !!req.user?.traktUsername && !!req.user.settings?.traktHistorySyncEnabled;
+    const traktWatchStateEnabled = shouldIncludeTraktWatchState(req.user);
 
     if (req.user && traktWatchStateEnabled) {
       await ensureFreshTraktWatchState(req.user.id);
@@ -166,20 +196,20 @@ movieRoutes.get('/:id/recommendations', async (req, res, next) => {
         mediaType: MediaType.MOVIE,
       }))
     );
+    const mappedResults = results.results.map((result) =>
+      mapMovieResult(
+        result,
+        media.find(
+          (req) => req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+        )
+      )
+    );
 
     return res.status(200).json({
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapMovieResult(
-          result,
-          media.find(
-            (req) =>
-              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-          )
-        )
-      ),
+      results: await addMovieWatchState(req.user, mappedResults),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving movie recommendations', {
@@ -211,20 +241,20 @@ movieRoutes.get('/:id/similar', async (req, res, next) => {
         mediaType: MediaType.MOVIE,
       }))
     );
+    const mappedResults = results.results.map((result) =>
+      mapMovieResult(
+        result,
+        media.find(
+          (req) => req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+        )
+      )
+    );
 
     return res.status(200).json({
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapMovieResult(
-          result,
-          media.find(
-            (req) =>
-              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-          )
-        )
-      ),
+      results: await addMovieWatchState(req.user, mappedResults),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving similar movies', {

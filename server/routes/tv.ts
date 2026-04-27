@@ -6,6 +6,7 @@ import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
+import type { User } from '@server/entity/User';
 import { Watchlist } from '@server/entity/Watchlist';
 import type { SeasonWatchedStatus } from '@server/interfaces/api/traktWatchInterfaces';
 import {
@@ -21,6 +22,7 @@ import {
   getSeasonWatchStatus,
   getShowSeasonData,
   getShowWatchStatus,
+  getShowWatchStatusSummaryMap,
 } from '@server/lib/traktWatchState';
 import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import logger from '@server/logger';
@@ -30,6 +32,39 @@ import { mapSeasonWithEpisodes, mapTvDetails } from '@server/models/Tv';
 import { Router } from 'express';
 
 const tvRoutes = Router();
+
+const shouldIncludeTraktWatchState = (user?: User) =>
+  !!user?.traktUsername && !!user.settings?.traktHistorySyncEnabled;
+
+const addTvWatchState = async (
+  user: User | undefined,
+  results: ReturnType<typeof mapTvResult>[],
+  language?: string
+) => {
+  if (!user || !shouldIncludeTraktWatchState(user)) {
+    return results;
+  }
+
+  await ensureFreshTraktWatchState(user.id);
+
+  const watchStatusMap = await getShowWatchStatusSummaryMap(
+    user.id,
+    results.map((result) => result.id),
+    language
+  );
+
+  return results.map((result) => ({
+    ...result,
+    userWatchStatus: watchStatusMap.get(result.id) ?? {
+      eligibleEpisodeCount: 0,
+      eligibleSeasonCount: 0,
+      watched: false,
+      watchedAt: null,
+      watchedEpisodeCount: 0,
+      watchedSeasonCount: 0,
+    },
+  }));
+};
 
 const getMetadataProviderForShow = async (tvId: number) => {
   const tmdb = new TheMovieDb();
@@ -46,8 +81,7 @@ const getMetadataProviderForShow = async (tvId: number) => {
 
 tvRoutes.get('/:id', async (req, res, next) => {
   try {
-    const traktWatchStateEnabled =
-      !!req.user?.traktUsername && !!req.user.settings?.traktHistorySyncEnabled;
+    const traktWatchStateEnabled = shouldIncludeTraktWatchState(req.user);
     const userId = req.user?.id;
     const metadataProvider = await getMetadataProviderForShow(
       Number(req.params.id)
@@ -487,19 +521,20 @@ tvRoutes.get('/:id/recommendations', async (req, res, next) => {
         mediaType: MediaType.TV,
       }))
     );
+    const mappedResults = results.results.map((result) =>
+      mapTvResult(
+        result,
+        media.find(
+          (req) => req.tmdbId === result.id && req.mediaType === MediaType.TV
+        )
+      )
+    );
 
     return res.status(200).json({
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapTvResult(
-          result,
-          media.find(
-            (req) => req.tmdbId === result.id && req.mediaType === MediaType.TV
-          )
-        )
-      ),
+      results: await addTvWatchState(req.user, mappedResults, req.locale),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving series recommendations', {
@@ -531,19 +566,20 @@ tvRoutes.get('/:id/similar', async (req, res, next) => {
         mediaType: MediaType.TV,
       }))
     );
+    const mappedResults = results.results.map((result) =>
+      mapTvResult(
+        result,
+        media.find(
+          (req) => req.tmdbId === result.id && req.mediaType === MediaType.TV
+        )
+      )
+    );
 
     return res.status(200).json({
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapTvResult(
-          result,
-          media.find(
-            (req) => req.tmdbId === result.id && req.mediaType === MediaType.TV
-          )
-        )
-      ),
+      results: await addTvWatchState(req.user, mappedResults, req.locale),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving similar series', {
