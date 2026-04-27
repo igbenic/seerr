@@ -2,6 +2,7 @@ import { getRepository } from '@server/datasource';
 import { TraktHistory } from '@server/entity/TraktHistory';
 import { TraktWatchedEpisode } from '@server/entity/TraktWatchedEpisode';
 import { TraktWatchedMedia } from '@server/entity/TraktWatchedMedia';
+import { TraktWatchedShowSummary } from '@server/entity/TraktWatchedShowSummary';
 import { TraktWatchlist } from '@server/entity/TraktWatchlist';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
@@ -37,6 +38,7 @@ export const clearLocalTraktData = async (userId: number): Promise<void> => {
     getRepository(TraktWatchlist).delete({ userId }),
     getRepository(TraktWatchedMedia).delete({ userId }),
     getRepository(TraktWatchedEpisode).delete({ userId }),
+    getRepository(TraktWatchedShowSummary).delete({ userId }),
   ]);
 
   const settings = await getRepository(UserSettings).findOne({

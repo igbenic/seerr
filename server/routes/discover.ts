@@ -16,7 +16,10 @@ import type {
 } from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
 import { getTraktRecommendations } from '@server/lib/trakt';
-import { getLatestMovieWatchStatusMap } from '@server/lib/traktWatchState';
+import {
+  getLatestMovieWatchStatusMap,
+  getShowWatchStatusSummaryMap,
+} from '@server/lib/traktWatchState';
 import { ensureFreshTraktWatchState } from '@server/lib/traktWatched';
 import { getTraktWatchlist } from '@server/lib/traktWatchlist';
 import logger from '@server/logger';
@@ -27,6 +30,7 @@ import {
   mapPersonResult,
   mapTvResult,
   type MovieResult,
+  type TvResult,
 } from '@server/models/Search';
 import { mapNetwork } from '@server/models/Tv';
 import { isCollection, isMovie, isPerson } from '@server/utils/typeHelpers';
@@ -59,14 +63,14 @@ export const createTmdbWithRegionLanguage = (user?: User): TheMovieDb => {
 
 const discoverRoutes = Router();
 
-const shouldIncludeTraktMovieWatchState = (user?: User) =>
+const shouldIncludeTraktWatchState = (user?: User) =>
   !!user?.traktUsername && !!user.settings?.traktHistorySyncEnabled;
 
 const addMovieWatchState = async (
   user: User | undefined,
   results: MovieResult[]
 ): Promise<MovieResult[]> => {
-  if (!user || !shouldIncludeTraktMovieWatchState(user)) {
+  if (!user || !shouldIncludeTraktWatchState(user)) {
     return results;
   }
 
@@ -82,6 +86,36 @@ const addMovieWatchState = async (
     userWatchStatus: watchStatusMap.get(result.id) ?? {
       watched: false,
       watchedAt: null,
+    },
+  }));
+};
+
+const addTvWatchState = async (
+  user: User | undefined,
+  results: TvResult[],
+  language?: string
+): Promise<TvResult[]> => {
+  if (!user || !shouldIncludeTraktWatchState(user)) {
+    return results;
+  }
+
+  await ensureFreshTraktWatchState(user.id);
+
+  const watchStatusMap = await getShowWatchStatusSummaryMap(
+    user.id,
+    results.map((result) => result.id),
+    language
+  );
+
+  return results.map((result) => ({
+    ...result,
+    userWatchStatus: watchStatusMap.get(result.id) ?? {
+      eligibleEpisodeCount: 0,
+      eligibleSeasonCount: 0,
+      watched: false,
+      watchedAt: null,
+      watchedEpisodeCount: 0,
+      watchedSeasonCount: 0,
     },
   }));
 };
@@ -496,18 +530,24 @@ discoverRoutes.get('/tv', async (req, res, next) => {
       );
     }
 
+    const results = data.results.map((result) =>
+      mapTvResult(
+        result,
+        media.find(
+          (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
+        )
+      )
+    );
+
     return res.status(200).json({
       page: data.page,
       totalPages: data.total_pages,
       totalResults: data.total_results,
       keywords: keywordData,
-      results: data.results.map((result) =>
-        mapTvResult(
-          result,
-          media.find(
-            (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
-          )
-        )
+      results: await addTvWatchState(
+        req.user,
+        results,
+        req.locale ?? query.language
       ),
     });
   } catch (e) {
@@ -552,19 +592,24 @@ discoverRoutes.get<{ language: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapTvResult(
+          result,
+          media.find(
+            (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
         language,
-        results: data.results.map((result) =>
-          mapTvResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.TV
-            )
-          )
+        results: await addTvWatchState(
+          req.user,
+          results,
+          (req.query.language as string) ?? req.locale
         ),
       });
     } catch (e) {
@@ -613,19 +658,24 @@ discoverRoutes.get<{ genreId: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapTvResult(
+          result,
+          media.find(
+            (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
         genre,
-        results: data.results.map((result) =>
-          mapTvResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.TV
-            )
-          )
+        results: await addTvWatchState(
+          req.user,
+          results,
+          (req.query.language as string) ?? req.locale
         ),
       });
     } catch (e) {
@@ -664,19 +714,24 @@ discoverRoutes.get<{ networkId: string }>(
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapTvResult(
+          result,
+          media.find(
+            (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
         network: mapNetwork(network),
-        results: data.results.map((result) =>
-          mapTvResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.TV
-            )
-          )
+        results: await addTvWatchState(
+          req.user,
+          results,
+          (req.query.language as string) ?? req.locale
         ),
       });
     } catch (e) {
@@ -717,17 +772,23 @@ discoverRoutes.get('/tv/upcoming', async (req, res, next) => {
       }))
     );
 
+    const results = data.results.map((result) =>
+      mapTvResult(
+        result,
+        media.find(
+          (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
+        )
+      )
+    );
+
     return res.status(200).json({
       page: data.page,
       totalPages: data.total_pages,
       totalResults: data.total_results,
-      results: data.results.map((result) =>
-        mapTvResult(
-          result,
-          media.find(
-            (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
-          )
-        )
+      results: await addTvWatchState(
+        req.user,
+        results,
+        (req.query.language as string) ?? req.locale
       ),
     });
   } catch (e) {
@@ -789,19 +850,20 @@ discoverRoutes.get('/trending', async (req, res, next) => {
         }))
       );
 
+      const results = data.results.map((result) =>
+        mapTvResult(
+          result,
+          media.find(
+            (med) => med.tmdbId === result.id && med.mediaType === MediaType.TV
+          )
+        )
+      );
+
       return res.status(200).json({
         page: data.page,
         totalPages: data.total_pages,
         totalResults: data.total_results,
-        results: data.results.map((result) =>
-          mapTvResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.TV
-            )
-          )
-        ),
+        results: await addTvWatchState(req.user, results, language),
       });
     }
 
@@ -838,6 +900,14 @@ discoverRoutes.get('/trending', async (req, res, next) => {
     const movieWatchStateMap = new Map(
       movieWatchStateResults.map((result) => [result.id, result])
     );
+    const tvWatchStateResults = await addTvWatchState(
+      req.user,
+      results.filter((result): result is TvResult => result.mediaType === 'tv'),
+      language
+    );
+    const tvWatchStateMap = new Map(
+      tvWatchStateResults.map((result) => [result.id, result])
+    );
 
     return res.status(200).json({
       page: data.page,
@@ -846,7 +916,9 @@ discoverRoutes.get('/trending', async (req, res, next) => {
       results: results.map((result) =>
         result.mediaType === 'movie'
           ? (movieWatchStateMap.get(result.id) ?? result)
-          : result
+          : result.mediaType === 'tv'
+            ? (tvWatchStateMap.get(result.id) ?? result)
+            : result
       ),
     });
   } catch (e) {

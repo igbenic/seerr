@@ -8,6 +8,7 @@ import { MediaType } from '@server/constants/media';
 import dataSource, { getRepository } from '@server/datasource';
 import { TraktWatchedEpisode } from '@server/entity/TraktWatchedEpisode';
 import { TraktWatchedMedia } from '@server/entity/TraktWatchedMedia';
+import { TraktWatchedShowSummary } from '@server/entity/TraktWatchedShowSummary';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { syncGoogleSheetsWatchedIfEnabled } from '@server/lib/googleSheetsSync';
@@ -17,6 +18,7 @@ import {
   getTraktHistoryStaleThresholdMs,
   shouldRefreshTraktData,
 } from '@server/lib/traktUserData';
+import { backfillMissingShowWatchSummariesForUser } from '@server/lib/traktWatchState';
 import logger from '@server/logger';
 
 const runningUserSyncs = new Set<number>();
@@ -235,6 +237,7 @@ export const syncTraktWatchStateForUser = async (
     await dataSource.transaction(async (manager) => {
       await manager.delete(TraktWatchedEpisode, { userId });
       await manager.delete(TraktWatchedMedia, { userId });
+      await manager.delete(TraktWatchedShowSummary, { userId });
 
       if (mediaRows.length > 0) {
         await manager.save(TraktWatchedMedia, mediaRows);
@@ -259,6 +262,17 @@ export const syncTraktWatchStateForUser = async (
       label: 'Trakt Watch State',
       mediaItems: mediaRows.length,
       userId,
+    });
+
+    void backfillMissingShowWatchSummariesForUser(
+      userId,
+      showRows.map((row) => row.tmdbId)
+    ).catch((error) => {
+      logger.warn('Trakt watched-state show summary backfill failed', {
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        label: 'Trakt Watch State',
+        userId,
+      });
     });
 
     await syncGoogleSheetsWatchedIfEnabled(userId).catch((error) => {
@@ -457,6 +471,8 @@ export const upsertEpisodeWatchStateEntries = async ({
     }),
     ['userId', 'mediaType', 'tmdbId']
   );
+
+  await getRepository(TraktWatchedShowSummary).delete({ tmdbId, userId });
 };
 
 export const deleteEpisodeWatchStateEntries = async ({
@@ -483,6 +499,7 @@ export const deleteEpisodeWatchStateEntries = async ({
       userId,
     }))
   );
+  await getRepository(TraktWatchedShowSummary).delete({ tmdbId, userId });
 
   const latestRemainingEpisode = await getRepository(
     TraktWatchedEpisode
